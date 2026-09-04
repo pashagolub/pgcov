@@ -42,7 +42,7 @@ func TestFormatFailedTests(t *testing.T) {
 			},
 		},
 		{
-			name: "mixed statuses only failed surfaces",
+			name: "failed and timed-out runs both surface, with distinct prefixes",
 			runs: []*runner.TestRun{
 				{Test: &discovery.DiscoveredFile{RelativePath: "a_test.sql"}, Status: runner.TestPassed},
 				{
@@ -65,7 +65,15 @@ func TestFormatFailedTests(t *testing.T) {
 			},
 			want: []string{
 				"FAILED b_test.sql: boom",
+				"TIMEOUT c_test.sql: context deadline exceeded",
 			},
+		},
+		{
+			name: "timed-out run without an error is skipped",
+			runs: []*runner.TestRun{
+				{Test: &discovery.DiscoveredFile{RelativePath: "t_test.sql"}, Status: runner.TestTimeout},
+			},
+			wantNil: true,
 		},
 		{
 			name: "nil entry safely skipped",
@@ -99,10 +107,10 @@ func TestFormatFailedTests(t *testing.T) {
 				if line != tc.want[i] {
 					t.Errorf("line %d: want %q, got %q", i, tc.want[i], line)
 				}
-				// Sanity: every emitted line carries the FAILED prefix so the
+				// Sanity: every emitted line carries a status prefix so the
 				// summary block stays scannable next to the "Tests:" line.
-				if !strings.HasPrefix(line, "FAILED ") {
-					t.Errorf("line %d missing FAILED prefix: %q", i, line)
+				if !strings.HasPrefix(line, "FAILED ") && !strings.HasPrefix(line, "TIMEOUT ") {
+					t.Errorf("line %d missing FAILED/TIMEOUT prefix: %q", i, line)
 				}
 			}
 		})

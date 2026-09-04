@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -92,7 +93,15 @@ func (e *Executor) Execute(ctx context.Context, testFile *discovery.DiscoveredFi
 	// Execute the per-test workflow
 	err := e.executeTestWorkflow(testCtx, testRun, sourceFiles)
 	if err != nil {
-		testRun.Status = TestFailed
+		// Distinguish a per-test timeout from an ordinary failure. testCtx is
+		// derived from ctx, so a cancelled or expired *parent* also shows up as
+		// testCtx.Err(); only attribute the timeout to this test when the parent
+		// is still live.
+		if ctx.Err() == nil && errors.Is(testCtx.Err(), context.DeadlineExceeded) {
+			testRun.Status = TestTimeout
+		} else {
+			testRun.Status = TestFailed
+		}
 		testRun.Error = err
 		if e.verbose {
 			fmt.Printf("[ERROR] Test failed: %v\n", err)

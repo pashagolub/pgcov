@@ -443,6 +443,8 @@ in the coverage file so `--base-dir` keeps working.
 
 ### I14 — `TestTimeout` status is never assigned; all timeout accounting is dead
 
+> **Status: IMPLEMENTED** — `Execute` now sets `TestTimeout` when the per-test deadline fires (`ctx.Err() == nil && errors.Is(testCtx.Err(), context.DeadlineExceeded)`), so a cancelled *parent* is still reported as `TestFailed`. Knock-on fixes in the same commit: `FormatFailedTests` gained a `TIMEOUT ` prefix (E7 previously skipped timeouts, which would have made them invisible once the status became reachable), the run summary prints a `timed out` segment when non-zero, and `docs/cli-contract.md` documents both. Covered by `TestExecuteMarksSlowTestAsTimedOut` and `TestParentCancellationIsNotATimeout`.
+
 > **Verified 2026-09-04** — `grep -rn TestTimeout` finds only the const declaration
 > (`types.go:33`), its `String()` case (`types.go:47`), two read-only `switch` cases
 > (`executor.go:154`, `parallel.go:83`) and one *test* construction
