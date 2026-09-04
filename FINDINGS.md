@@ -362,6 +362,8 @@ that a source file that *fails* to load is visibly 0% rather than absent.
 
 ### I12 — `CollectSignals` deadline is a total window, not an idle window; leftover signals are silently discarded
 
+> **Status: IMPLEMENTED** — The grace period is now an *idle* window — `timer.Reset(timeout)` on every signal — and both exit paths (idle deadline, ctx cancellation) drain the buffer non-blockingly before returning, so nothing already delivered is discarded. The `errors` case is disabled once closed, which stops a closed channel from spinning the select. Verified against the old code: `TestCollectSignals_IdleWindowResetsPerSignal` collected **3 of 20** signals pre-fix and `TestCollectSignals_DrainsBufferOnContextCancel` **2 of 10** — the silent truncation this finding described.
+
 > **Verified 2026-09-04** — `internal/database/listener.go`: `timer := time.NewTimer(timeout)`
 > is created once outside the loop and is never `Reset`. The `case signal := <-l.signals`
 > branch does not touch the timer.
