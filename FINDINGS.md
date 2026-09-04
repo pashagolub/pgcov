@@ -676,6 +676,8 @@ way to confirm it resolved to the right tree.
 
 ### E12 — Several packages on the critical path have no unit tests
 
+> **Status: IMPLEMENTED** — All seven named files now have dedicated tests. Three were covered by the fix branches earlier in this stack (`listener.go` by I12, `executor.go`'s filtering by I10, `discover.go`'s key format by I13); this commit adds the rest — `loadSetupScripts` and `generateCoverageChannel` (internal test), `cli.Merge` and `cli.Report` including end-to-end `--base-dir` resolution from an unrelated CWD, `SummarizeRuns`/`Duration`/`TestStatus.String`, `NewPool`'s parse failure, `MaxConns` formula, `application_name` and version gate, and `Discover`'s error and traversal cases.
+
 The test suite covers `cli/config`, `cli/init`, `coverage/collector`, `coverage/merge`,
 `database/tempdb`, `discovery/classifier`, `instrument`, `parser`, all three reporters,
 `runner/parallel` and `runner/types`. The following have **no** dedicated test file:
