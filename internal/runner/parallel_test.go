@@ -48,7 +48,7 @@ func TestParallelExecution(t *testing.T) {
 	}
 
 	// Discover source files
-	sourceFiles, err := discovery.DiscoverCoLocatedSources(testFiles)
+	sourceFiles, err := discovery.DiscoverCoLocatedSources("../../testdata/parallel", testFiles)
 	if err != nil {
 		t.Fatalf("Failed to discover sources: %v", err)
 	}
@@ -169,7 +169,7 @@ func TestParallelExecutionAccuracy(t *testing.T) {
 		t.Fatalf("Failed to discover tests: %v", err)
 	}
 
-	sourceFiles, err := discovery.DiscoverCoLocatedSources(testFiles)
+	sourceFiles, err := discovery.DiscoverCoLocatedSources("../../testdata/parallel", testFiles)
 	if err != nil {
 		t.Fatalf("Failed to discover sources: %v", err)
 	}

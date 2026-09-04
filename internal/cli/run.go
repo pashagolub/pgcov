@@ -105,7 +105,7 @@ func Run(ctx context.Context, config *Config, searchPath string) (int, error) {
 	}
 
 	// Step 2: Discover source files (co-located with tests)
-	sourceFiles, err := discovery.DiscoverCoLocatedSources(testFiles)
+	sourceFiles, err := discovery.DiscoverCoLocatedSources(searchPath, testFiles)
 	if err != nil {
 		return 1, fmt.Errorf("failed to discover source files: %w", err)
 	}

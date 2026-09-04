@@ -23,7 +23,7 @@ type PositionHits map[string]int // Key: "startPos:length", Value: hit count
 // the single source of truth for the Version field: Store.Load and Merge both
 // refuse data stamped with anything else, so a file produced by an incompatible
 // build fails loudly instead of being silently misinterpreted.
-const SchemaVersion = "1.0"
+const SchemaVersion = "2.0"
 
 // ValidateVersion reports whether c carries a schema version this build
 // understands. The error names the offending version and tells the user how to

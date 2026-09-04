@@ -1,8 +1,8 @@
 {
-  "version": "1.0",
-  "timestamp": "2026-09-04T23:35:02.8091136+02:00",
+  "version": "2.0",
+  "timestamp": "2026-09-04T23:38:31.5003554+02:00",
   "positions": {
-    "..\\testdata\\simple\\complex.sql": {
+    "complex.sql": {
       "0:190": 3,
       "1022:18": 4,
       "1073:62": 3,
@@ -22,11 +22,11 @@
       "912:35": 1,
       "973:42": 4
     },
-    "..\\testdata\\simple\\math.sql": {
+    "math.sql": {
       "124:12": 1,
       "263:12": 1
     },
-    "..\\testdata\\simple\\string.sql": {
+    "string.sql": {
       "136:13": 1,
       "262:15": 1
     }

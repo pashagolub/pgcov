@@ -401,6 +401,8 @@ remainder toward a reported total.
 
 ### I13 — Coverage-file keys are CWD- and OS-dependent, which silently breaks `merge`
 
+> **Status: IMPLEMENTED** — `RelativePath` is now computed against the discovery root and normalised with `filepath.ToSlash`, finally matching the contract its own doc comment already stated ("Path relative to search root"). `DiscoverCoLocatedSources` takes the run root so per-directory scans still key against the run — without it two `functions.sql` in different directories would collapse onto one key. Reporters `filepath.FromSlash` before joining. Schema bumped to `"2.0"`, so I18's guard rejects pre-fix files with a regenerate message. Pre-fix the tests show the same file keyed `alpha\alpha_test.sql` / `alpha_test.sql` / `..\beta\beta_test.sql` by CWD.
+
 > **Verified 2026-09-04** — reproduced with a throwaway test calling
 > `discovery.DiscoverTests` on the same absolute directory from two different working
 > directories: `RelativePath` came back as `sql\a_test.sql` and `a_test.sql` for the

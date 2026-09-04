@@ -109,7 +109,7 @@ Generate coverage report from existing coverage data.
 
 ```json
 {
-  "version": "1.0",
+  "version": "2.0",
   "timestamp": "2026-08-14T16:00:00Z",
   "positions": {
     "src/auth.sql": {
@@ -206,7 +206,8 @@ Configurable via: `--coverage-file` flag on `run` and `report`
   "properties": {
     "version": {
       "type": "string",
-      "description": "Schema version (semantic versioning)"
+      "const": "2.0",
+      "description": "Coverage-file schema version. Readers must reject any other value rather than guess; regenerate the data with 'pgcov run'."
     },
     "timestamp": {
       "type": "string",
@@ -215,7 +216,7 @@ Configurable via: `--coverage-file` flag on `run` and `report`
     },
     "positions": {
       "type": "object",
-      "description": "Per-file position-based coverage. Key: relative file path. Value: position -> hit count map.",
+      "description": "Per-file position-based coverage. Key: file path relative to the run's discovery root, normalised to forward slashes on every platform. Value: position -> hit count map.",
       "additionalProperties": {
         "$ref": "#/definitions/PositionHits"
       }
@@ -238,7 +239,7 @@ Configurable via: `--coverage-file` flag on `run` and `report`
 
 ```json
 {
-  "version": "1.0",
+  "version": "2.0",
   "timestamp": "2026-08-14T16:00:00Z",
   "positions": {
     "src/auth.sql": {
