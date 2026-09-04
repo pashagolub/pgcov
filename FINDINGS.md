@@ -655,6 +655,8 @@ to the instrumented copies inside temp databases, never to user code.
 
 ### E11 — Coverage data records no source checksum, so stale reports are undetectable
 
+> **Status: IMPLEMENTED** — `coverage.json` gains a `sources` map of per-file SHA-256 + size, written by `pgcov run`. `pgcov report` re-hashes and warns per changed or missing file (a warning, not an error — a stale report is still the best available information); `pgcov merge` refuses inputs collected from different revisions of a shared file. Additive and `omitempty`, so it rides schema `"2.0"` and coverage without fingerprints verifies quietly. **Cut from scope:** the `--strict` flag — the warning plus the merge refusal cover the cases that silently corrupt output, and a flag to escalate a warning to an error can follow if wanted.
+
 Coverage positions are **byte offsets** into the source file
 (`StartPos = stmt.StartPos + bodyIndexInOriginal + segStart`). `coverage.json` stores
 only the file path and those offsets — no size, mtime, or hash.

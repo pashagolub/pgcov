@@ -28,6 +28,13 @@ type Coverage struct {
 	// inflated the headline number. Reporters still render them so those lines
 	// stay highlighted.
 	ImplicitPositions map[string]PositionHits `json:"implicit_positions,omitempty"`
+
+	// Sources fingerprints each source file as it was when coverage was
+	// collected. Positions are byte offsets, so a file edited between `run` and
+	// `report` silently shifts every offset past the edit; this is what lets a
+	// reader notice. Omitted when empty, so data from an older build still
+	// loads and simply skips verification.
+	Sources map[string]SourceInfo `json:"sources,omitempty"`
 }
 
 // PositionHits represents position hit counts for a single file
@@ -63,6 +70,7 @@ func NewCoverage() *Coverage {
 		Timestamp:         time.Now(),
 		Positions:         make(map[string]PositionHits),
 		ImplicitPositions: make(map[string]PositionHits),
+		Sources:           make(map[string]SourceInfo),
 	}
 }
 
@@ -261,6 +269,22 @@ func Merge(coverages ...*Coverage) (*Coverage, error) {
 		if err := c.ValidateVersion(); err != nil {
 			return nil, fmt.Errorf("coverage input %d: %w", i+1, err)
 		}
+		// Summing hit counts across different revisions of the same file
+		// produces an internally consistent, meaningless result: the positions
+		// mean different things. Refuse rather than silently combine.
+		if conflicts := conflictingSources(result.Sources, c.Sources); len(conflicts) > 0 {
+			return nil, fmt.Errorf(
+				"coverage input %d: %s was collected from a different revision than an earlier input; "+
+					"positions are byte offsets and cannot be summed across revisions - "+
+					"re-run 'pgcov run' on a single revision",
+				i+1, conflicts[0])
+		}
+		for file, info := range c.Sources {
+			if _, ok := result.Sources[file]; !ok {
+				result.Sources[file] = info
+			}
+		}
+
 		mergeInto(result.Positions, c.Positions)
 		mergeInto(result.ImplicitPositions, c.ImplicitPositions)
 	}
@@ -284,11 +308,15 @@ func mergeInto(dst, src map[string]PositionHits) {
 
 // Clone returns a deep copy of the Coverage struct
 func (c *Coverage) Clone() *Coverage {
+	sources := make(map[string]SourceInfo, len(c.Sources))
+	maps.Copy(sources, c.Sources)
+
 	return &Coverage{
 		Version:           c.Version,
 		Timestamp:         c.Timestamp,
 		Positions:         clonePositions(c.Positions),
 		ImplicitPositions: clonePositions(c.ImplicitPositions),
+		Sources:           sources,
 	}
 }
 

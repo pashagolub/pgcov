@@ -222,6 +222,18 @@ Configurable via: `--coverage-file` flag on `run` and `report`
         "$ref": "#/definitions/PositionHits"
       }
     },
+    "sources": {
+      "type": "object",
+      "description": "Per-file fingerprint of each source as it was when coverage was collected. Key: the same root-relative path used in positions. Positions are byte offsets, so an edit after the run invalidates them; `report` warns on a mismatch and `merge` refuses to combine inputs collected from different revisions of the same file. Omitted when empty.",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["sha256", "size"],
+        "properties": {
+          "sha256": { "type": "string", "description": "Lowercase hex SHA-256 of the file contents" },
+          "size":   { "type": "integer", "description": "File size in bytes" }
+        }
+      }
+    },
     "implicit_positions": {
       "type": "object",
       "description": "Per-file coverage for DDL/DML statements, which are marked covered as soon as their source file loads. Kept separate because they can never be uncovered: counting them would make every CREATE TABLE a permanently-100%-covered denominator entry. Reporters still render them so those lines stay highlighted. Omitted when empty.",

@@ -188,9 +188,21 @@ func Run(ctx context.Context, config *Config, searchPath string) (int, error) {
 		return 1, fmt.Errorf("coverage collection failed: %w", err)
 	}
 
-	// Step 8: Save coverage data
+	// Step 8: Save coverage data, fingerprinting each source as it was when
+	// these positions were computed. Positions are byte offsets, so a later
+	// edit silently invalidates them; the fingerprint lets `report` and `merge`
+	// notice instead of painting hit counts onto unrelated spans.
+	cov := collector.Coverage()
+	for i := range sourceFiles {
+		info, err := coverage.HashFile(sourceFiles[i].Path)
+		if err != nil {
+			return 1, fmt.Errorf("failed to fingerprint source: %w", err)
+		}
+		cov.AddSource(sourceFiles[i].RelativePath, info)
+	}
+
 	store := coverage.NewStore(config.CoverageFile)
-	if err := store.Save(collector.Coverage()); err != nil {
+	if err := store.Save(cov); err != nil {
 		return 1, fmt.Errorf("failed to save coverage: %w", err)
 	}
 
