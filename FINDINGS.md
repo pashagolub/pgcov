@@ -304,6 +304,8 @@ source slice handed to a stub executor.
 
 ### I11 — Implicit DDL/DML positions can never be uncovered, inflating the headline percentage
 
+> **Status: IMPLEMENTED** — Chose option 1: two numbers. `Positions` is now executable-only and DDL/DML moves to `ImplicitPositions`; the percentage, `--fail-under` and the JSON summary count executable statements only, while HTML/LCOV render **both** via `AllPositions` so DDL lines stay highlighted. `InitializeFromInstrumented` seeds both maps, so a source file that fails to load is visibly 0% instead of absent. `--fail-under` now fails with an explanation when nothing executable was instrumented, rather than passing on an empty measurement. Schema rides the `"2.0"` bump from I13. The 75%-vs-0% repro from this finding is now a permanent regression test. **This change exposed [I20](#i20)** — the split revealed that SQL-language functions had never produced any coverage signal at all.
+
 > **Verified 2026-09-04** — reproduced with a throwaway test over `Collector` and a
 > synthetic `InstrumentedSQL` holding 3 implicit points and 1 never-executed executable
 > point: `TotalCoveragePercent()` reported **75.00%** where real executable coverage was

@@ -197,6 +197,7 @@ func Run(ctx context.Context, config *Config, searchPath string) (int, error) {
 	// Step 9: Display summary
 	summary := runner.SummarizeRuns(testRuns)
 	coveragePercent := collector.TotalCoveragePercent()
+	hasExecutable := collector.HasExecutablePositions()
 
 	// Surface per-test failure messages so users do not have to re-run with
 	// --verbose to see why a test failed. Each line is prefixed with "FAILED "
@@ -216,16 +217,43 @@ func Run(ctx context.Context, config *Config, searchPath string) (int, error) {
 		fmt.Printf("Tests:    %d passed, %d failed, %d total\n",
 			summary.PassedTests, summary.FailedTests, summary.TotalTests)
 	}
-	fmt.Printf("Coverage: %.2f%%\n", coveragePercent)
+	execCovered, execTotal := collector.ExecutablePositionCounts()
+	implicitCovered, implicitTotal := collector.ImplicitPositionCounts()
+
+	// The headline number counts executable statements only. DDL/DML is marked
+	// covered the moment its file loads, so folding it in made every CREATE
+	// TABLE a permanently-100%-covered denominator entry; it is reported on its
+	// own line instead of inflating the percentage.
+	if hasExecutable {
+		fmt.Printf("Coverage: %.2f%% executable (%d/%d statements)\n",
+			coveragePercent, execCovered, execTotal)
+	} else {
+		fmt.Printf("Coverage: n/a - no executable statements were instrumented\n")
+	}
+	if implicitTotal > 0 {
+		fmt.Printf("          %d/%d DDL/DML statements loaded\n", implicitCovered, implicitTotal)
+	}
 	fmt.Printf("Time:     %v\n", time.Since(startTime).Round(time.Millisecond))
 	fmt.Printf("\n")
 	fmt.Printf("Coverage data written to %s\n", config.CoverageFile)
 
-	// Determine exit code: test failures take precedence; otherwise check threshold.
+	// Determine exit code: test failures take precedence; otherwise check the
+	// threshold, which applies to the executable percentage. Measuring it
+	// against the old inflated number meant a suite with no real PL/pgSQL
+	// coverage could clear a high threshold on DDL alone.
 	exitCode := summary.ExitCode()
-	if exitCode == 0 && config.FailUnder > 0 && coveragePercent < config.FailUnder {
-		fmt.Printf("Coverage %.2f%% is below threshold %.2f%%\n", coveragePercent, config.FailUnder)
-		return 1, nil
+	if exitCode == 0 && config.FailUnder > 0 {
+		if !hasExecutable {
+			// Nothing measurable was instrumented, so no threshold can be
+			// satisfied. Fail loudly rather than passing on an empty measurement.
+			fmt.Printf("Coverage threshold %.2f%% cannot be met: no executable statements were instrumented\n",
+				config.FailUnder)
+			return 1, nil
+		}
+		if coveragePercent < config.FailUnder {
+			fmt.Printf("Coverage %.2f%% is below threshold %.2f%%\n", coveragePercent, config.FailUnder)
+			return 1, nil
+		}
 	}
 
 	return exitCode, nil
