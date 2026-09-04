@@ -498,6 +498,8 @@ failure is arguably not a test failure).
 
 ### I16 — Flag application uses zero-value sentinels and mutates a package-level global
 
+> **Status: IMPLEMENTED** — `runCommand` now starts from `cli.NewConfig()` (a copy) instead of `&cli.DefaultConfig`, and `ApplyFlagsToConfig` takes a `FlagLookup` (satisfied by `*urfave/cli.Command`) plus a `RunFlags` struct, so overrides are driven by `IsSet` rather than by comparing against the zero value. `--timeout 0` and `--parallel 0` now reach `Validate` (which rejects them) instead of being silently dropped. Flag names are shared constants so the wiring and the override logic cannot drift.
+
 > **Verified 2026-09-04** — `main.go:runCommand` does `config := &cli.DefaultConfig`;
 > `cli/config.go:ApplyFlagsToConfig` guards every field with `!= 0` / `!= ""`.
 

@@ -23,36 +23,36 @@ func main() {
 				Action: runCommand,
 				Flags: []urfavecli.Flag{
 					&urfavecli.StringFlag{
-						Name:    "connection",
+						Name:    cli.FlagConnection,
 						Aliases: []string{"c"},
 						Usage:   "PostgreSQL connection string (URI or key=value format). Supports standard PG* environment variables.",
 					},
 					&urfavecli.DurationFlag{
-						Name:  "timeout",
+						Name:  cli.FlagTimeout,
 						Usage: "Per-test timeout",
 					},
 					&urfavecli.DurationFlag{
-						Name:  "signal-timeout",
+						Name:  cli.FlagSignalTimeout,
 						Usage: "Grace period to wait for in-flight coverage NOTIFY signals after test SQL executes",
 					},
 					&urfavecli.IntFlag{
-						Name:  "parallel",
+						Name:  cli.FlagParallel,
 						Usage: "Maximum concurrent tests (1 = sequential)",
 					},
 					&urfavecli.StringFlag{
-						Name:  "coverage-file",
+						Name:  cli.FlagCoverageFile,
 						Usage: "Coverage data output path",
 					},
 					&urfavecli.StringSliceFlag{
-						Name:  "setup",
+						Name:  cli.FlagSetup,
 						Usage: "SQL file(s) (globs allowed) run verbatim in each test's temp database before loading instrumented sources. Use for prerequisite schema the sources depend on. Repeatable; order preserved.",
 					},
 					&urfavecli.BoolFlag{
-						Name:  "verbose",
+						Name:  cli.FlagVerbose,
 						Usage: "Enable debug output",
 					},
 					&urfavecli.Float64Flag{
-						Name:  "fail-under",
+						Name:  cli.FlagFailUnder,
 						Usage: "Fail (exit 1) if total coverage percentage is below this threshold (0 = disabled)",
 					},
 				},
@@ -126,18 +126,23 @@ func main() {
 
 // runCommand handles the 'pgcov run' command
 func runCommand(ctx context.Context, cmd *urfavecli.Command) error {
-	// Load configuration
-	config := &cli.DefaultConfig
-	connection := cmd.String("connection")
-	timeout := cmd.Duration("timeout")
-	signalTimeout := cmd.Duration("signal-timeout")
-	parallel := cmd.Int("parallel")
-	coverageFile := cmd.String("coverage-file")
-	setupFiles := cmd.StringSlice("setup")
-	verbose := cmd.Bool("verbose")
-	failUnder := cmd.Float64("fail-under")
+	// Start from a copy of the defaults. Taking &cli.DefaultConfig would mutate
+	// the package-level template and leak settings between commands.
+	config := cli.NewConfig()
 
-	cli.ApplyFlagsToConfig(config, connection, timeout, signalTimeout, parallel, coverageFile, verbose, setupFiles, failUnder)
+	// Overrides are driven by cmd.IsSet, so an explicitly-passed zero value
+	// (--timeout 0, --parallel 0) reaches Validate instead of being silently
+	// dropped by a non-zero check.
+	cli.ApplyFlagsToConfig(config, cmd, cli.RunFlags{
+		Connection:    cmd.String(cli.FlagConnection),
+		Timeout:       cmd.Duration(cli.FlagTimeout),
+		SignalTimeout: cmd.Duration(cli.FlagSignalTimeout),
+		Parallel:      cmd.Int(cli.FlagParallel),
+		CoverageFile:  cmd.String(cli.FlagCoverageFile),
+		SetupFiles:    cmd.StringSlice(cli.FlagSetup),
+		Verbose:       cmd.Bool(cli.FlagVerbose),
+		FailUnder:     cmd.Float64(cli.FlagFailUnder),
+	})
 
 	// Validate configuration
 	if err := config.Validate(); err != nil {
