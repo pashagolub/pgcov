@@ -531,6 +531,8 @@ overrides from `cmd.IsSet("...")` rather than value comparison. urfave/cli v3 ex
 
 ### I17 — `fmt.Sscanf("%d")` silently accepts trailing garbage (API hardening)
 
+> **Status: IMPLEMENTED** — Both parsers now use `strconv.Atoi` (plus `strings.Cut` for the position key) and reject anything not fully consumed. Confirmed against the old code: `ParsePositionKey("10:20junk")`, `("1:2:3")`, `("-1:20")`, `(" 10:20")` and `ParseSignalID("a.sql:12abc:5")`, `("a.sql:12:5.5")` all succeeded silently; they now error. Scope confirmed as hardening — no production path produces these, so no behaviour change for pgcov-generated data.
+
 > **Verified 2026-09-04** — measured directly: `fmt.Sscanf("12abc", "%d", &n)` returns
 > `n=12, count=1, err=<nil>`; `fmt.Sscanf("10:20junk", "%d:%d", &a, &b)` returns
 > `a=10, b=20, count=2, err=<nil>`.
