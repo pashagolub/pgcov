@@ -554,6 +554,8 @@ trailing bytes.
 
 ### I18 — `Merge` ignores the `version` schema field
 
+> **Status: IMPLEMENTED** — Added the `coverage.SchemaVersion` constant and `Coverage.ValidateVersion()`, enforced in `Store.Load` (so every reader inherits the guard) and in `Merge`, whose signature becomes `(*Coverage, error)`. Errors name the offending input, its version, and tell the user to *regenerate* rather than downgrade. Note: the pre-existing `TestMerge_VersionAndTimestamp` asserted the old behaviour — that a `"legacy"` input is silently accepted and restamped — and was rewritten, since that is precisely what this finding calls wrong. This lands the machinery I13 then relies on when it bumps the version.
+
 > **Verified 2026-09-04** — `coverage.Merge` reads only `c.Positions`; the `Version`
 > field of each input is never inspected, and the result is hard-coded to `NewCoverage()`'s
 > `"1.0"`.
