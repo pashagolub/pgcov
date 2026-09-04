@@ -587,6 +587,62 @@ reports the module version.
 
 ---
 
+
+### I20 — SQL-language function coverage never worked: the injected CTE is pruned and `pg_notify` never runs
+
+> **Status: IMPLEMENTED** — signals for SQL-language functions are now emitted as a standalone `SELECT pg_notify(...);` statement placed *before* the statement they mark. Found while implementing I11: the inflated percentage had been masking a total instrumentation failure.
+
+> **Verified 2026-09-04** — measured directly against PostgreSQL 16. A function whose body is
+> `WITH _pgcov_signal AS (SELECT pg_notify('probe','cte-fired')) SELECT x * 2;` returns the
+> correct value (42) but delivers **no notification**; the same CTE *referenced* by the main
+> query (`SELECT x * 2 FROM _pgcov_signal`) fires immediately. End-to-end, `testdata/sqlfunc`
+> reported **1/6 positions covered (16.67%)** before the fix and **6/6 (100%)** after.
+
+`instrumentBody` injected coverage signals into SQL-language functions as a CTE prefix:
+
+```sql
+WITH _pgcov_signal AS (SELECT pg_notify('pgcov', '<signal>')) SELECT x * 2;
+```
+
+`_pgcov_signal` is never referenced by the main query and is not data-modifying, so the
+planner prunes it outright. `pg_notify` is never called and **no SQL-language function has
+ever produced a coverage signal**.
+
+This was invisible for two compounding reasons:
+
+1. The single implicit `CREATE TABLE` position in `testdata/sqlfunc` was marked covered on
+   load, so `TestSQLFunctionInstrumentation` — which asserted only
+   `if totalPct <= 0 { t.Error(...) }` — passed at 16.67% while every one of the five
+   SQL-function positions sat at zero. A threshold-of-zero assertion on a coverage tool's
+   own coverage is not a test.
+2. Three unit tests asserted the *presence* of the CTE form
+   (`TestInstrument_SQLFunction_UsesCTE` most directly), pinning the broken shape as if it
+   were the contract.
+
+This is a Round 1 fix that traded a visible bug for a silent one. PR #78c2f2a
+(`fix(instrument): use CTE-based pg_notify for SQL-language functions`, the B6 fix)
+correctly identified that a standalone `SELECT pg_notify(...)` broke return types — but the
+cause was *placement*, not form: the signal was emitted **after** the statement, and in a
+SQL function the last statement determines the return type, so the void-returning
+`pg_notify` became the function's result. The CTE preserved the return type and lost the
+signal.
+
+Emitting the signal as a standalone statement **before** the one it marks has neither
+problem: it executes, and the original statement remains last. Ordering carries no
+information here — a SQL function body has no control flow, so every statement runs
+whenever the function is called.
+
+Verified against `RETURNS INT`, `RETURNS TEXT`, `RETURNS void`, `RETURNS TABLE(...)`,
+`RETURNS SETOF`, a composite row type, and a multi-statement body containing DML: return
+values are unchanged, DML still applies, and every signal fires.
+
+*Side effect, noted not fixed:* a single-statement SQL function is inlinable by the planner,
+and adding a leading statement makes it non-inlinable. This is inherent to instrumenting SQL
+functions at all — an inlined function would not fire its signal either — and applies only
+to the instrumented copies inside temp databases, never to user code.
+
+---
+
 ## Improvements / Enhancements
 
 ---

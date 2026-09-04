@@ -104,14 +104,15 @@ func instrumentStatement(stmt *parser.Statement, filePath string, channel string
 //
 // For PL/pgSQL (skipToBegin=true), tokens before the first BEGIN are skipped.
 // For SQL functions (skipToBegin=false), instrumentation starts immediately.
-// When useCTE is true, coverage signals are injected as a CTE prefix
-// (WITH _pgcov_signal AS (SELECT pg_notify(<channel>, ...)) <original statement>)
-// instead of a standalone statement, avoiding extra result sets that break
-// SQL-language function return types.
-// When useCTE is false, signals use PERFORM pg_notify(<channel>, ...) (PL/pgSQL).
+// When useSQLStatement is true (SQL-language functions), each signal is emitted
+// as its own `SELECT pg_notify(<channel>, ...);` statement placed immediately
+// before the statement it marks, which fires reliably while leaving the body's
+// last statement - and therefore the function's return type - untouched.
+// When useSQLStatement is false, signals use PERFORM pg_notify(<channel>, ...)
+// (PL/pgSQL).
 // The channel argument must be an identifier-safe string (lowercase letters,
 // digits, underscore) — the caller is responsible for this contract.
-func instrumentBody(stmt *parser.Statement, filePath string, skipToBegin bool, useCTE bool, channel string) (string, []CoveragePoint) {
+func instrumentBody(stmt *parser.Statement, filePath string, skipToBegin bool, useSQLStatement bool, channel string) (string, []CoveragePoint) {
 	bodyContent := stmt.Body
 	if bodyContent == "" {
 		return stmt.RawSQL, nil
@@ -175,13 +176,30 @@ func instrumentBody(stmt *parser.Statement, filePath string, skipToBegin bool, u
 
 		escapedSignal := strings.ReplaceAll(cp.SignalID, "'", "''")
 
-		if useCTE {
-			// SQL-language functions: inject coverage signal as a CTE
-			// prefix so we don't produce an extra result set that would
-			// conflict with the function's declared return type (B6).
-			ctePrefix := fmt.Sprintf("WITH _pgcov_signal AS (SELECT pg_notify('%s', '%s')) ",
-				channel, escapedSignal)
-			instrumentedBody.WriteString(ctePrefix)
+		if useSQLStatement {
+			// SQL-language functions: emit the signal as its own statement
+			// *before* the one it marks.
+			//
+			// Placement is the whole trick. Emitting it after made the notify
+			// the body's last statement, and in a SQL function the last
+			// statement determines the return type - that is the B6 breakage.
+			// The CTE form that replaced it
+			// (WITH _pgcov_signal AS (SELECT pg_notify(...)) <stmt>) preserved
+			// the return type but never fired: an unreferenced, non-data-
+			// modifying CTE is pruned by the planner, so pg_notify never ran
+			// and SQL functions reported no coverage at all.
+			//
+			// A leading statement has neither problem: it runs, and the
+			// original statement stays last. Ordering carries no information
+			// here anyway - a SQL function body has no control flow, so every
+			// statement runs whenever the function is called.
+			// The gap already ended with this statement's indentation, so the
+			// notify sits at the right column; re-indent the original
+			// statement after the newline we add. The indentation lives in
+			// that gap, not in segText (which starts at the first token), so
+			// it is read back from bodyContent rather than from segText.
+			fmt.Fprintf(&instrumentedBody, "SELECT pg_notify('%s', '%s');\n%s",
+				channel, escapedSignal, indentBefore(bodyContent, segStart))
 			instrumentedBody.WriteString(segText)
 			lastWrittenPos = segEnd
 		} else if termPos := findTerminalPos(segText); termPos >= 0 {
@@ -345,6 +363,25 @@ func indentOf(s string) string {
 		}
 	}
 	return ""
+}
+
+// indentBefore returns the run of spaces and tabs immediately preceding pos on
+// its own line. Segment text starts at the first token, so a statement's own
+// indentation sits in the gap before it rather than in the segment itself.
+func indentBefore(content string, pos int) string {
+	if pos < 0 || pos > len(content) {
+		return ""
+	}
+	i := pos
+	for i > 0 && (content[i-1] == ' ' || content[i-1] == '\t') {
+		i--
+	}
+	// Only genuine line indentation counts; whitespace after other code on the
+	// same line is not an indent.
+	if i > 0 && content[i-1] != '\n' {
+		return ""
+	}
+	return content[i:pos]
 }
 
 // getIndentation returns the leading whitespace of a line.

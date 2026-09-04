@@ -138,7 +138,7 @@ $$ LANGUAGE plpgsql;`
 	}
 }
 
-func TestInstrument_SQLFunction_UsesCTE(t *testing.T) {
+func TestInstrument_SQLFunction_UsesLeadingNotify(t *testing.T) {
 	sql := `CREATE OR REPLACE FUNCTION double_val(x INT)
 RETURNS INT AS $$
     SELECT x * 2;
@@ -171,17 +171,34 @@ $$ LANGUAGE sql;`
 		t.Fatal("Instrument() produced no coverage points for SQL function")
 	}
 
-	// Should use CTE-based instrumentation, not standalone SELECT pg_notify
-	if !strings.Contains(instrumented.InstrumentedText, "WITH _pgcov_signal AS (SELECT pg_notify(") {
-		t.Error("SQL function should use CTE-based instrumentation")
+	// SQL functions must be instrumented with a leading standalone
+	// `SELECT pg_notify(...);` statement.
+	//
+	// This previously asserted the opposite - that the signal is a CTE prefix,
+	// `WITH _pgcov_signal AS (SELECT pg_notify(...)) <stmt>`. That form
+	// preserves the function's return type but never executes: the CTE is not
+	// referenced by the main query and is not data-modifying, so the planner
+	// prunes it and pg_notify never runs. SQL-language functions reported no
+	// coverage at all.
+	if !strings.Contains(instrumented.InstrumentedText, "SELECT pg_notify(") {
+		t.Error("SQL function should be instrumented with a standalone SELECT pg_notify statement")
+	}
+	if strings.Contains(instrumented.InstrumentedText, "WITH _pgcov_signal AS") {
+		t.Error("SQL function must not use the CTE form: an unreferenced CTE is pruned and never fires")
 	}
 
-	// Should NOT have a standalone SELECT pg_notify (without CTE wrapper)
-	// Check that 'SELECT pg_notify' only appears inside CTE definitions
+	// The signal must come BEFORE the statement it marks. In a SQL function the
+	// last statement determines the return type, so a trailing pg_notify (which
+	// returns void) breaks the function - that was the original B6 bug.
 	text := instrumented.InstrumentedText
-	cteRemoved := strings.ReplaceAll(text, "WITH _pgcov_signal AS (SELECT pg_notify(", "")
-	if strings.Contains(cteRemoved, "SELECT pg_notify(") {
-		t.Error("SQL function should not have standalone SELECT pg_notify calls")
+	notifyIdx := strings.Index(text, "SELECT pg_notify(")
+	stmtIdx := strings.Index(text, "SELECT x * 2")
+	if notifyIdx < 0 || stmtIdx < 0 {
+		t.Fatalf("could not locate both the signal and the statement in:\n%s", text)
+	}
+	if notifyIdx > stmtIdx {
+		t.Error("the coverage signal must precede the statement, or it becomes the " +
+			"function's last statement and dictates the return type")
 	}
 
 	// Should NOT use PERFORM (that's for PL/pgSQL)
@@ -222,10 +239,15 @@ $$ LANGUAGE sql;`
 		t.Fatalf("Instrument() error = %v", err)
 	}
 
-	// Both statements should get CTE-based instrumentation
-	cteCount := strings.Count(instrumented.InstrumentedText, "WITH _pgcov_signal AS (SELECT pg_notify(")
-	if cteCount < 2 {
-		t.Errorf("Expected at least 2 CTE injections for multi-statement SQL function, got %d", cteCount)
+	// Each statement gets its own leading `SELECT pg_notify(...);`. The CTE
+	// form this replaced was never executed: an unreferenced, non-data-
+	// modifying CTE is pruned by the planner, so the signal never fired.
+	notifyCount := strings.Count(instrumented.InstrumentedText, "SELECT pg_notify(")
+	if notifyCount < 2 {
+		t.Errorf("Expected at least 2 pg_notify statements for multi-statement SQL function, got %d", notifyCount)
+	}
+	if strings.Contains(instrumented.InstrumentedText, "WITH _pgcov_signal AS") {
+		t.Error("SQL functions must not use the CTE form: an unreferenced CTE is pruned and never fires")
 	}
 
 	t.Logf("Instrumented SQL:\n%s", instrumented.InstrumentedText)
@@ -607,9 +629,9 @@ $$ LANGUAGE sql;`
 		t.Fatalf("Instrument() error = %v", err)
 	}
 
-	want := fmt.Sprintf("WITH _pgcov_signal AS (SELECT pg_notify('%s',", ch)
+	want := fmt.Sprintf("SELECT pg_notify('%s',", ch)
 	if !strings.Contains(instrumented.InstrumentedText, want) {
-		t.Errorf("expected CTE prefix %q in instrumented SQL, got:\n%s", want, instrumented.InstrumentedText)
+		t.Errorf("expected leading pg_notify statement %q in instrumented SQL, got:\n%s", want, instrumented.InstrumentedText)
 	}
 	if strings.Contains(instrumented.InstrumentedText, "pg_notify('pgcov',") {
 		t.Errorf("custom channel was ignored -- legacy 'pgcov' channel found in output")
