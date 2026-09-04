@@ -260,6 +260,8 @@ so this round trades breadth for confirmation.
 
 ### I10 — Parallel execution path skips per-directory source filtering
 
+> **Status: IMPLEMENTED** — Filtering moved into `Executor.Execute`, the single choke point both `ExecuteBatch` and `WorkerPool.worker` funnel through, so the two paths can no longer diverge. Regression test `TestParallelFiltersSourcesPerTestDirectory` builds two sibling directories whose sources both define a table `shared` with different columns; pre-fix it reproduces the defect exactly (`failed to load source ... relation "shared" already exists`, and `sequential=passed parallel=failed`), post-fix both pass.
+
 > **Verified 2026-09-04** — `grep -rn filterSourcesByDirectory` returns exactly one
 > call site: `executor.go:105`, inside `ExecuteBatch`. `WorkerPool.ExecuteParallel`
 > passes the unfiltered `sourceFiles` slice to `wp.worker`, which passes it verbatim
