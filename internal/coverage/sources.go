@@ -45,6 +45,30 @@ func (c *Coverage) AddSource(file string, info SourceInfo) {
 	c.Sources[file] = info
 }
 
+// ResolveBaseDir decides which directory relative coverage keys are resolved
+// against, in order of precedence:
+//
+//  1. an explicit base dir (the --base-dir flag), which always wins;
+//  2. the discovery root recorded by the run, when it still exists;
+//  3. "", meaning the process working directory.
+//
+// Step 2 is what makes `pgcov report` work with no flags: keys are relative to
+// the run's discovery root, so resolving them against the working directory
+// only happens to work when the two coincide.
+func (c *Coverage) ResolveBaseDir(explicit string) string {
+	if explicit != "" {
+		return explicit
+	}
+	if c.Root == "" {
+		return ""
+	}
+	if info, err := os.Stat(c.Root); err == nil && info.IsDir() {
+		return c.Root
+	}
+	// Recorded on another machine or in a moved checkout; fall back to the CWD.
+	return ""
+}
+
 // VerifySources re-hashes the recorded source files and returns one
 // human-readable warning per file that has changed or gone missing.
 //

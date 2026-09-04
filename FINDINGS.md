@@ -649,6 +649,46 @@ to the instrumented copies inside temp databases, never to user code.
 
 ---
 
+
+### I21 — `pgcov report` could not resolve sources without `--base-dir` after the key-format change
+
+> **Status: IMPLEMENTED** — the run records its discovery root in `coverage.json`; `report` falls back to it when `--base-dir` is not given. Found by an end-to-end smoke test after I13 landed.
+
+> **Verified 2026-09-05** — reproduced with the built binary. After
+> `pgcov run ./examples/demo`, a plain `pgcov report --format=html` from the *same*
+> directory emitted `Warning: 01_schema.sql: source file not found` for every file and
+> produced an HTML report with no annotated source (`grep -c` for the function body: **0**).
+> Passing `--base-dir ./examples/demo` produced the annotated report (**4** matches). With
+> the fix, the flagless invocation produces the annotated report and no warnings.
+
+[I13](#i13) changed coverage keys from CWD-relative to **discovery-root**-relative, which was
+the right fix for `merge` and for cross-platform portability. But source *resolution* at
+report time still defaulted to the process working directory, and the two are no longer the
+same thing. The result: `pgcov report` with no flags stopped finding sources even when run
+from exactly where `pgcov run` had been invoked — the flagless path, and the one the
+quickstart documents.
+
+The I13 finding itself named this fix ("Record the root in the coverage file so `--base-dir`
+keeps working") and only half of it was implemented — the key normalisation. This is the
+other half.
+
+`Coverage` gains a `root` field holding the run's absolute discovery root, and
+`ResolveBaseDir` establishes the precedence:
+
+1. `--base-dir`, which always wins;
+2. the recorded root, when it still exists;
+3. the working directory.
+
+The recorded root is a *hint*, never a requirement: it is an absolute path, so a coverage
+file moved to another machine or a relocated checkout simply falls through to step 3 rather
+than failing. `Merge` keeps the first root it sees so merged files stay resolvable.
+
+Worth noting as process: this was invisible to the whole unit and integration suite —
+every test either passed `--base-dir` explicitly or asserted on coverage data rather than on
+rendered output. It took running the actual binary end to end to see it.
+
+---
+
 ## Improvements / Enhancements
 
 ---

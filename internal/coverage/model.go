@@ -29,6 +29,15 @@ type Coverage struct {
 	// stay highlighted.
 	ImplicitPositions map[string]PositionHits `json:"implicit_positions,omitempty"`
 
+	// Root is the absolute discovery root the run used, i.e. the directory the
+	// keys in Positions are relative to. It is a hint for resolving sources at
+	// report time, not a requirement: `--base-dir` overrides it, and it is
+	// ignored when the directory no longer exists (a different machine, a moved
+	// checkout). Without it, `pgcov report` could not find sources even when run
+	// from the same directory as `pgcov run`, because the keys are relative to
+	// the discovery root while resolution defaults to the working directory.
+	Root string `json:"root,omitempty"`
+
 	// Sources fingerprints each source file as it was when coverage was
 	// collected. Positions are byte offsets, so a file edited between `run` and
 	// `report` silently shifts every offset past the edit; this is what lets a
@@ -279,6 +288,13 @@ func Merge(coverages ...*Coverage) (*Coverage, error) {
 					"re-run 'pgcov run' on a single revision",
 				i+1, conflicts[0])
 		}
+		// Keep the first root seen so a merged file still resolves its sources
+		// at report time. Shards of one run share a tree; if they somehow do
+		// not, --base-dir remains the override.
+		if result.Root == "" {
+			result.Root = c.Root
+		}
+
 		for file, info := range c.Sources {
 			if _, ok := result.Sources[file]; !ok {
 				result.Sources[file] = info

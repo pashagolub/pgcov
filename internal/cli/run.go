@@ -193,6 +193,13 @@ func Run(ctx context.Context, config *Config, searchPath string) (int, error) {
 	// edit silently invalidates them; the fingerprint lets `report` and `merge`
 	// notice instead of painting hit counts onto unrelated spans.
 	cov := collector.Coverage()
+
+	// Record the discovery root so `pgcov report` can resolve the keys without
+	// being told where they came from. Keys are relative to this directory.
+	if absRoot, err := filepath.Abs(searchPath); err == nil {
+		cov.Root = absRoot
+	}
+
 	for i := range sourceFiles {
 		info, err := coverage.HashFile(sourceFiles[i].Path)
 		if err != nil {
