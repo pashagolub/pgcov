@@ -576,6 +576,8 @@ than producing plausible-looking wrong output.
 
 ### I19 — Binary version is hardcoded and not wired to the build
 
+> **Status: IMPLEMENTED** — `version` is now a `var` defaulting to `"dev"`, stamped via `-X main.version=$(git describe --tags --always --dirty)`, with a `runtime/debug.ReadBuildInfo()` fallback so `go install ...@latest` reports the module version. Wired into `BUILD.md` and CI (with `fetch-depth: 0`, since `git describe` needs tags that `actions/checkout` does not fetch by default). Verified: a stamped build reports `v9.9.9-test`, an unstamped one falls back to the toolchain's VCS version.
+
 > **Verified 2026-09-04** — `cmd/pgcov/main.go: const version = "1.0.0"`. `BUILD.md`
 > documents `-ldflags="-s -w"` only (no `-X`), and `.github/workflows/build.yml` builds
 > with a bare `go build ./cmd/pgcov`.

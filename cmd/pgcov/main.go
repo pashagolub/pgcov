@@ -4,18 +4,41 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"runtime/debug"
 
 	"github.com/cybertec-postgresql/pgcov/internal/cli"
 	urfavecli "github.com/urfave/cli/v3"
 )
 
-const version = "1.0.0"
+// version is the binary's reported version. It is a var, not a const, so a
+// release build can stamp it:
+//
+//	go build -ldflags "-X main.version=$(git describe --tags --always --dirty)" ./cmd/pgcov
+//
+// Left unstamped it falls back to the module version recorded by the Go
+// toolchain (populated for `go install ...@version`), and finally to "dev".
+// Previously this was a hardcoded "1.0.0", so every build ever produced --
+// local, CI, or released -- reported the same string.
+var version = "dev"
+
+// resolveVersion returns the stamped version if there is one, otherwise the
+// version the toolchain embedded at build time.
+func resolveVersion() string {
+	if version != "dev" && version != "" {
+		return version
+	}
+	info, ok := debug.ReadBuildInfo()
+	if !ok || info.Main.Version == "" || info.Main.Version == "(devel)" {
+		return version
+	}
+	return info.Main.Version
+}
 
 func main() {
 	app := &urfavecli.Command{
 		Name:    "pgcov",
 		Usage:   "PostgreSQL test runner and coverage tool",
-		Version: version,
+		Version: resolveVersion(),
 		Commands: []*urfavecli.Command{
 			{
 				Name:   "run",

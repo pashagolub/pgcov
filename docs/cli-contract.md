@@ -161,7 +161,7 @@ USAGE:
    pgcov [global options] command [command options] [arguments...]
 
 VERSION:
-   1.0.0
+   v1.2.3-4-gabc1234
 
 COMMANDS:
    run      Run tests and collect coverage
@@ -185,7 +185,7 @@ Display version information.
 **stdout Output**:
 
 ```
-pgcov version 1.0.0
+pgcov version v1.2.3-4-gabc1234    # stamped at build time; 'dev' for an unstamped build
 ```
 
 ---
