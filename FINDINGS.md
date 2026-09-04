@@ -463,6 +463,8 @@ set `TestTimeout`. Alternatively remove the status and its accounting.
 
 ### I15 — `Executor.Execute` never returns a non-nil error, so both callers' error paths are unreachable
 
+> **Status: IMPLEMENTED** — `Execute` now returns a bare `*TestRun`; the unreachable `if err != nil` block in `ExecuteBatch` and the doubly-unreachable `run == nil` fallback in `worker` are gone. `ExecuteBatch`/`ExecuteParallel` keep their `error` returns (consumed by `cli.Run` and existing tests) — only the always-nil channel from `Execute` was removed. Doc comment now states that `TestRun.Error` is the sole failure channel.
+
 > **Verified 2026-09-04** — `executor.go`: `Execute` ends with `return testRun, nil` and
 > has no other return statement; failures are recorded on `testRun.Status`/`.Error`.
 
