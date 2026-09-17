@@ -131,12 +131,45 @@ func (l *Listener) Close(ctx context.Context) error {
 	return nil
 }
 
-// CollectSignals collects all signals until context is cancelled or timeout
+// CollectSignals drains coverage signals until the stream goes quiet for
+// `timeout`, the listener closes, or ctx is done.
+//
+// The timeout is an *idle* window, not a cap on the whole collection phase: it
+// is restarted on every signal received. A fixed total window silently truncated
+// coverage on tests that emit many signals - CollectSignals returned while
+// l.signals still held buffered entries, the deferred Close then discarded them,
+// and because droppedSignals only counts overflow at enqueue time, nothing
+// reported the loss.
+//
+// Before returning on either the idle deadline or ctx cancellation, whatever is
+// already buffered is drained non-blockingly, so signals that arrived while the
+// deadline was expiring are still counted.
 func (l *Listener) CollectSignals(ctx context.Context, timeout time.Duration) ([]types.CoverageSignal, error) {
 	var signals []types.CoverageSignal
 
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
+
+	// Taking a local copy lets us disable the case (by nil-ing it) once
+	// receiveLoop has closed the channel; a closed channel is always ready and
+	// would otherwise spin this select.
+	errCh := l.errors
+
+	// drain empties the buffer without blocking. Signals already delivered by
+	// pgx belong in the result even though the window has closed.
+	drain := func() []types.CoverageSignal {
+		for {
+			select {
+			case signal, ok := <-l.signals:
+				if !ok {
+					return signals
+				}
+				signals = append(signals, signal)
+			default:
+				return signals
+			}
+		}
+	}
 
 	for {
 		select {
@@ -145,15 +178,21 @@ func (l *Listener) CollectSignals(ctx context.Context, timeout time.Duration) ([
 				return signals, nil
 			}
 			signals = append(signals, signal)
-		case err := <-l.errors:
-			// Log error but continue collecting
-			_ = err
+			// Restart the idle window. Go 1.23+ timer semantics make a bare
+			// Reset on a NewTimer safe: the channel is unbuffered, so no stale
+			// value can be delivered after the reset.
+			timer.Reset(timeout)
+		case _, ok := <-errCh:
+			if !ok {
+				errCh = nil // listener shut down; stop selecting on this case
+				continue
+			}
+			// Listener errors are non-fatal for collection: keep gathering
+			// whatever signals still arrive within the idle window.
 		case <-timer.C:
-			return signals, nil
+			return drain(), nil
 		case <-ctx.Done():
-			return signals, ctx.Err()
+			return drain(), ctx.Err()
 		}
 	}
 }
-
-
