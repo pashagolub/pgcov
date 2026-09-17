@@ -52,6 +52,15 @@ Time:     4.1s
 Coverage data written to .pgcov/coverage.json
 ```
 
+When one or more tests exceed `--timeout`, a `timed out` segment is added and
+those tests are listed with a `TIMEOUT ` prefix instead of `FAILED `:
+
+```
+TIMEOUT slow_test.sql: test execution failed: context deadline exceeded
+
+Tests:    1 passed, 0 failed, 1 timed out, 2 total
+```
+
 When no test files are found:
 
 ```
