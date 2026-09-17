@@ -842,6 +842,30 @@ func TestSQLFunctionInstrumentation(t *testing.T) {
 		totalPct := cov.TotalPositionCoveragePercent()
 		t.Logf("Total coverage: %.2f%%", totalPct)
 
+		// Assert the actual SQL-function positions, not just "> 0".
+		//
+		// A `totalPct > 0` check is what let a total instrumentation failure
+		// hide here: the CTE form this fixture was built for never fired, so
+		// all five SQL-function positions sat at zero and the single implicit
+		// CREATE TABLE position alone carried the number to 16.67%. The test
+		// passed while measuring nothing it claimed to measure.
+		hits := cov.Positions["sqlfunc_source.sql"]
+		if len(hits) == 0 {
+			t.Fatal("no coverage entries for sqlfunc_source.sql")
+		}
+
+		uncovered := 0
+		for posKey, count := range hits {
+			if count == 0 {
+				uncovered++
+				t.Errorf("SQL-function position %s was never covered; the test file "+
+					"exercises every function in this fixture", posKey)
+			}
+		}
+		if uncovered == 0 {
+			t.Logf("all %d SQL-function positions covered", len(hits))
+		}
+
 		if totalPct <= 0 {
 			t.Error("Expected some coverage from SQL function tests")
 		}
