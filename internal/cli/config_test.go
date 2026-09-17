@@ -1,62 +1,175 @@
 package cli
 
 import (
+	"reflect"
 	"testing"
 	"time"
 )
 
-func TestApplyFlagsToConfig_EmptyFlagsPreserveConfig(t *testing.T) {
-	originalConnString := "host=originalhost port=5433 user=originaluser dbname=originaldb"
-	cfg := &Config{
-		ConnectionString: originalConnString,
+// setFlags is a FlagLookup listing the flags a user explicitly passed.
+type setFlags map[string]bool
+
+func (f setFlags) IsSet(name string) bool { return f[name] }
+
+func TestApplyFlagsToConfig_NoFlagsPreserveConfig(t *testing.T) {
+	original := Config{
+		ConnectionString: "host=originalhost port=5433 user=originaluser dbname=originaldb",
 		Timeout:          45 * time.Second,
 		SignalTimeout:    250 * time.Millisecond,
 		Parallelism:      2,
 		CoverageFile:     "original.json",
 		Verbose:          false,
 	}
+	cfg := original
 
-	// Apply empty flags (should not change config)
-	ApplyFlagsToConfig(cfg, "", 0, 0, 0, "", false, nil, 0)
+	// Values are present but no flag was set: nothing may be applied.
+	ApplyFlagsToConfig(&cfg, setFlags{}, RunFlags{
+		Connection:    "host=ignored",
+		Timeout:       time.Hour,
+		SignalTimeout: time.Hour,
+		Parallel:      99,
+		CoverageFile:  "ignored.json",
+		SetupFiles:    []string{"ignored.sql"},
+		Verbose:       true,
+		FailUnder:     99,
+	})
 
-	if cfg.ConnectionString != originalConnString {
-		t.Errorf("empty flag should not change connection string")
-	}
-	if cfg.Timeout != 45*time.Second {
-		t.Errorf("zero flag should not change timeout")
-	}
-	if cfg.Parallelism != 2 {
-		t.Errorf("zero flag should not change parallelism")
-	}
-	if len(cfg.SetupFiles) != 0 {
-		t.Errorf("nil setup flag should not set setup files")
-	}
-	if cfg.SignalTimeout != 250*time.Millisecond {
-		t.Errorf("zero flag should not change signal timeout")
+	if !reflect.DeepEqual(cfg, original) {
+		t.Errorf("unset flags must not change the config:\n got %+v\nwant %+v", cfg, original)
 	}
 }
 
-func TestApplyFlagsToConfig_SetupFiles(t *testing.T) {
-	cfg := &Config{}
-	ApplyFlagsToConfig(cfg, "", 0, 0, 0, "", false, []string{"a.sql", "glob/*.sql"}, 0)
-	if len(cfg.SetupFiles) != 2 {
-		t.Fatalf("expected 2 setup files, got %d", len(cfg.SetupFiles))
+func TestApplyFlagsToConfig_NilLookupIsANoop(t *testing.T) {
+	original := Config{Timeout: 45 * time.Second}
+	cfg := original
+	ApplyFlagsToConfig(&cfg, nil, RunFlags{Timeout: time.Hour})
+	if !reflect.DeepEqual(cfg, original) {
+		t.Errorf("nil FlagLookup must leave the config untouched, got %+v", cfg)
 	}
 }
 
-func TestApplyFlagsToConfig_SignalTimeout(t *testing.T) {
-	cfg := &Config{SignalTimeout: 100 * time.Millisecond}
-	ApplyFlagsToConfig(cfg, "", 0, 500*time.Millisecond, 0, "", false, nil, 0)
+func TestApplyFlagsToConfig_SetFlagsApply(t *testing.T) {
+	cfg := DefaultConfig
+	ApplyFlagsToConfig(&cfg, setFlags{
+		FlagConnection:    true,
+		FlagTimeout:       true,
+		FlagSignalTimeout: true,
+		FlagParallel:      true,
+		FlagCoverageFile:  true,
+		FlagSetup:         true,
+		FlagVerbose:       true,
+		FlagFailUnder:     true,
+	}, RunFlags{
+		Connection:    "host=localhost",
+		Timeout:       90 * time.Second,
+		SignalTimeout: 500 * time.Millisecond,
+		Parallel:      8,
+		CoverageFile:  "out.json",
+		SetupFiles:    []string{"a.sql", "glob/*.sql"},
+		Verbose:       true,
+		FailUnder:     80,
+	})
+
+	if cfg.ConnectionString != "host=localhost" {
+		t.Errorf("connection = %q", cfg.ConnectionString)
+	}
+	if cfg.Timeout != 90*time.Second {
+		t.Errorf("timeout = %v", cfg.Timeout)
+	}
 	if cfg.SignalTimeout != 500*time.Millisecond {
-		t.Fatalf("expected signal timeout 500ms, got %v", cfg.SignalTimeout)
+		t.Errorf("signal timeout = %v", cfg.SignalTimeout)
+	}
+	if cfg.Parallelism != 8 {
+		t.Errorf("parallelism = %d", cfg.Parallelism)
+	}
+	if cfg.CoverageFile != "out.json" {
+		t.Errorf("coverage file = %q", cfg.CoverageFile)
+	}
+	if len(cfg.SetupFiles) != 2 {
+		t.Errorf("setup files = %v", cfg.SetupFiles)
+	}
+	if !cfg.Verbose {
+		t.Error("verbose not applied")
+	}
+	if cfg.FailUnder != 80 {
+		t.Errorf("fail-under = %v", cfg.FailUnder)
 	}
 }
 
-func TestApplyFlagsToConfig_SignalTimeoutZeroPreservesDefault(t *testing.T) {
-	cfg := &Config{SignalTimeout: 250 * time.Millisecond}
-	ApplyFlagsToConfig(cfg, "", 0, 0, 0, "", false, nil, 0)
-	if cfg.SignalTimeout != 250*time.Millisecond {
-		t.Fatalf("zero flag must preserve signal timeout, got %v", cfg.SignalTimeout)
+// TestApplyFlagsToConfig_ExplicitZeroIsHonoured is the point of the change.
+// Overrides used to be driven by comparing each value against its zero value,
+// so an explicitly-passed zero was indistinguishable from an absent flag and
+// silently dropped. `--timeout 0` and `--parallel 0` must now reach Validate,
+// which is what rejects them.
+func TestApplyFlagsToConfig_ExplicitZeroIsHonoured(t *testing.T) {
+	cases := []struct {
+		name  string
+		flag  string
+		flags RunFlags
+		check func(Config) bool
+		want  string
+	}{
+		{
+			name:  "timeout",
+			flag:  FlagTimeout,
+			flags: RunFlags{Timeout: 0},
+			check: func(c Config) bool { return c.Timeout == 0 },
+			want:  "Timeout == 0",
+		},
+		{
+			name:  "parallel",
+			flag:  FlagParallel,
+			flags: RunFlags{Parallel: 0},
+			check: func(c Config) bool { return c.Parallelism == 0 },
+			want:  "Parallelism == 0",
+		},
+		{
+			name:  "signal timeout",
+			flag:  FlagSignalTimeout,
+			flags: RunFlags{SignalTimeout: 0},
+			check: func(c Config) bool { return c.SignalTimeout == 0 },
+			want:  "SignalTimeout == 0",
+		},
+		{
+			name:  "fail-under",
+			flag:  FlagFailUnder,
+			flags: RunFlags{FailUnder: 0},
+			check: func(c Config) bool { return c.FailUnder == 0 },
+			want:  "FailUnder == 0",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := DefaultConfig
+			cfg.FailUnder = 50 // non-zero starting point for the fail-under case
+			ApplyFlagsToConfig(&cfg, setFlags{tc.flag: true}, tc.flags)
+			if !tc.check(cfg) {
+				t.Errorf("explicit zero for --%s was dropped; want %s, got %+v", tc.flag, tc.want, cfg)
+			}
+		})
+	}
+}
+
+// TestNewConfigDoesNotShareStateWithDefault guards the other half: runCommand
+// used to take &cli.DefaultConfig and mutate it, rewriting the package-level
+// defaults for the rest of the process.
+func TestNewConfigDoesNotShareStateWithDefault(t *testing.T) {
+	before := DefaultConfig
+
+	cfg := NewConfig()
+	cfg.ConnectionString = "host=mutated"
+	cfg.Parallelism = 99
+	cfg.Verbose = true
+
+	if !reflect.DeepEqual(DefaultConfig, before) {
+		t.Errorf("mutating a NewConfig() result changed the shared defaults:\n got %+v\nwant %+v",
+			DefaultConfig, before)
+	}
+
+	second := NewConfig()
+	if second.ConnectionString != before.ConnectionString || second.Parallelism != before.Parallelism {
+		t.Errorf("a later NewConfig() inherited state from an earlier one: %+v", second)
 	}
 }
 
