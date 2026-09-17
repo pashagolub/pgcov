@@ -3,7 +3,6 @@ package coverage
 import (
 	"fmt"
 	"maps"
-	"sort"
 	"sync"
 
 	"github.com/cybertec-postgresql/pgcov/internal/instrument"
@@ -53,7 +52,13 @@ func (c *Collector) AddSignal(signal runner.CoverageSignal) error {
 	return c.addSignalUnsafe(signal)
 }
 
-// addSignalUnsafe adds a signal without locking (internal use when lock is already held)
+// addSignalUnsafe adds a signal without locking (internal use when lock is already held).
+//
+// Whether a position is executable or implicit is established by
+// InitializeFromInstrumented, which seeds both maps; a signal simply increments
+// whichever map already holds its key. A signal for an unseeded position is
+// treated as executable, which is the safe default: it counts toward the
+// measured percentage rather than silently inflating it.
 func (c *Collector) addSignalUnsafe(signal runner.CoverageSignal) error {
 	// Parse signal ID to extract file, startPos, and length
 	file, startPos, length, err := instrument.ParseSignalID(signal.SignalID)
@@ -61,14 +66,15 @@ func (c *Collector) addSignalUnsafe(signal runner.CoverageSignal) error {
 		return fmt.Errorf("invalid signal ID: %w", err)
 	}
 
-	// Position coverage - increment hit count
 	posKey := fmt.Sprintf("%d:%d", startPos, length)
-	if existingCount, exists := c.coverage.Positions[file][posKey]; exists {
-		c.coverage.AddPosition(file, startPos, length, existingCount+1)
-	} else {
-		c.coverage.AddPosition(file, startPos, length, 1)
+
+	if existingCount, exists := c.coverage.ImplicitPositions[file][posKey]; exists {
+		c.coverage.AddImplicitPosition(file, startPos, length, existingCount+1)
+		return nil
 	}
 
+	existingCount := c.coverage.Positions[file][posKey]
+	c.coverage.AddPosition(file, startPos, length, existingCount+1)
 	return nil
 }
 
@@ -104,29 +110,34 @@ func (c *Collector) GetFileList() []string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	var files []string
-	for file := range c.coverage.Positions {
-		files = append(files, file)
-	}
-	sort.Strings(files)
-	return files
+	return c.coverage.GetFiles()
 }
 
 // InitializeFromInstrumented seeds the coverage data with 0-hit entries for
-// every non-implicit CoveragePoint that has not yet been recorded. This
-// ensures that unexecuted branches (e.g. ELSIF/ELSE arms that were never
-// taken) appear as "not covered" in reports instead of being absent.
+// every CoveragePoint that has not yet been recorded, routing each to the
+// executable or implicit map according to its ImplicitCoverage flag.
+//
+// Seeding serves two purposes. It makes unexecuted branches (ELSIF/ELSE arms
+// that were never taken) appear as "not covered" rather than being absent, and
+// it is what classifies each position: addSignalUnsafe afterwards just
+// increments whichever map holds the key. Implicit positions are seeded too, so
+// a source file that fails to load is visibly 0% instead of missing entirely -
+// previously they were skipped, which meant an implicit position existed only
+// if its hit count was already at least 1.
 func (c *Collector) InitializeFromInstrumented(instrumented []*instrument.InstrumentedSQL) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	for _, inst := range instrumented {
 		for _, cp := range inst.Locations {
-			if cp.ImplicitCoverage {
-				continue // DDL/DML are tracked separately
-			}
 			// Only seed if not already present (do not overwrite real hit counts).
 			posKey := fmt.Sprintf("%d:%d", cp.StartPos, cp.Length)
+			if cp.ImplicitCoverage {
+				if _, exists := c.coverage.ImplicitPositions[cp.File][posKey]; !exists {
+					c.coverage.AddImplicitPosition(cp.File, cp.StartPos, cp.Length, 0)
+				}
+				continue
+			}
 			if _, exists := c.coverage.Positions[cp.File][posKey]; !exists {
 				c.coverage.AddPosition(cp.File, cp.StartPos, cp.Length, 0)
 			}
@@ -134,9 +145,34 @@ func (c *Collector) InitializeFromInstrumented(instrumented []*instrument.Instru
 	}
 }
 
-// TotalCoveragePercent returns the overall coverage percentage
+// TotalCoveragePercent returns the overall coverage percentage across
+// executable statements. DDL/DML positions are excluded; see
+// Coverage.TotalPositionCoveragePercent.
 func (c *Collector) TotalCoveragePercent() float64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.coverage.TotalPositionCoveragePercent()
+}
+
+// ExecutablePositionCounts returns covered and total counts over executable
+// statements, for callers that want to show the numbers behind the percentage.
+func (c *Collector) ExecutablePositionCounts() (covered int, total int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.coverage.ExecutablePositionCounts()
+}
+
+// ImplicitPositionCounts returns covered and total counts over DDL/DML
+// statements.
+func (c *Collector) ImplicitPositionCounts() (covered int, total int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.coverage.ImplicitPositionCounts()
+}
+
+// HasExecutablePositions reports whether anything measurable was instrumented.
+func (c *Collector) HasExecutablePositions() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.coverage.HasExecutablePositions()
 }

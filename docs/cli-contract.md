@@ -46,7 +46,8 @@ Found 5 source file(s)
 Connected to PostgreSQL
 
 Tests:    2 passed, 1 failed, 3 total
-Coverage: 78.50%
+Coverage: 78.50% executable (157/200 statements)
+          42/42 DDL/DML statements loaded
 Time:     4.1s
 
 Coverage data written to .pgcov/coverage.json
@@ -220,7 +221,14 @@ Configurable via: `--coverage-file` flag on `run` and `report`
     },
     "positions": {
       "type": "object",
-      "description": "Per-file position-based coverage. Key: file path relative to the run's discovery root, normalised to forward slashes on every platform. Value: position -> hit count map.",
+      "description": "Per-file coverage for EXECUTABLE statements (instrumented PL/pgSQL and SQL function bodies). Key: file path relative to the run's discovery root, normalised to forward slashes on every platform. Value: position -> hit count map. The coverage percentage is computed over these and only these.",
+      "additionalProperties": {
+        "$ref": "#/definitions/PositionHits"
+      }
+    },
+    "implicit_positions": {
+      "type": "object",
+      "description": "Per-file coverage for DDL/DML statements, which are marked covered as soon as their source file loads. Kept separate because they can never be uncovered: counting them would make every CREATE TABLE a permanently-100%-covered denominator entry. Reporters still render them so those lines stay highlighted. Omitted when empty.",
       "additionalProperties": {
         "$ref": "#/definitions/PositionHits"
       }
@@ -262,6 +270,24 @@ Configurable via: `--coverage-file` flag on `run` and `report`
 ```
 
 All instrumented positions are seeded with `0` even if the test never executes them, so unexecuted branches (for example `ELSIF`/`ELSE` arms) are visible as `0` rather than being absent from the file.
+
+### What the coverage percentage counts
+
+The reported percentage covers **executable statements only** - the PL/pgSQL and
+SQL function bodies instrumented with `pg_notify`. DDL/DML statements are
+recorded separately under `implicit_positions` and reported on their own line.
+
+They are kept apart because an implicit position is marked covered the instant
+its source file loads, so it can never be uncovered. Folding them into the
+percentage made every `CREATE TABLE` a permanently-100%-covered denominator
+entry: a source file that is 90% DDL scored roughly 90% before a single
+assertion ran, and `--fail-under` could be satisfied by schema alone.
+
+`--fail-under` therefore compares against the executable percentage. When a run
+instruments no executable statements at all, there is nothing a threshold can
+measure and `--fail-under` fails with an explanatory message rather than
+passing on an empty measurement.
+
 
 ---
 
