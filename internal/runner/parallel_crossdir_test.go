@@ -97,7 +97,7 @@ func instrumentTree(t *testing.T, root string) ([]discovery.DiscoveredFile, []*i
 		t.Fatalf("expected 2 test files, got %d", len(testFiles))
 	}
 
-	sourceFiles, err := discovery.DiscoverCoLocatedSources(testFiles)
+	sourceFiles, err := discovery.DiscoverCoLocatedSources(root, testFiles)
 	if err != nil {
 		t.Fatalf("discover sources: %v", err)
 	}

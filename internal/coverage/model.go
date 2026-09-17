@@ -2,6 +2,7 @@ package coverage
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -14,6 +15,15 @@ type Coverage struct {
 	Version   string                  `json:"version"`   // Schema version (e.g., "1.0")
 	Timestamp time.Time               `json:"timestamp"` // When coverage collected
 	Positions map[string]PositionHits `json:"positions"` // Key: relative file path, Value: map of position keys to hit counts
+
+	// Root is the absolute discovery root the run used, i.e. the directory the
+	// keys in Positions are relative to. It is a hint for resolving sources at
+	// report time, not a requirement: --base-dir overrides it, and it is ignored
+	// when the directory no longer exists (a different machine, a moved
+	// checkout). Without it, `pgcov report` cannot find sources even when run
+	// from the same directory as `pgcov run`, because the keys are relative to
+	// the discovery root while resolution defaults to the working directory.
+	Root string `json:"root,omitempty"`
 }
 
 // PositionHits represents position hit counts for a single file
@@ -23,7 +33,7 @@ type PositionHits map[string]int // Key: "startPos:length", Value: hit count
 // the single source of truth for the Version field: Store.Load and Merge both
 // refuse data stamped with anything else, so a file produced by an incompatible
 // build fails loudly instead of being silently misinterpreted.
-const SchemaVersion = "1.0"
+const SchemaVersion = "2.0"
 
 // ValidateVersion reports whether c carries a schema version this build
 // understands. The error names the offending version and tells the user how to
@@ -138,6 +148,30 @@ func ParsePositionKey(posKey string) (startPos int, length int, err error) {
 	return startPos, length, nil
 }
 
+// ResolveBaseDir decides which directory relative coverage keys are resolved
+// against, in order of precedence:
+//
+//  1. an explicit base dir (the --base-dir flag), which always wins;
+//  2. the discovery root recorded by the run, when it still exists;
+//  3. "", meaning the process working directory.
+//
+// Step 2 is what makes `pgcov report` work with no flags: keys are relative to
+// the run's discovery root, so resolving them against the working directory
+// only happens to work when the two coincide.
+func (c *Coverage) ResolveBaseDir(explicit string) string {
+	if explicit != "" {
+		return explicit
+	}
+	if c.Root == "" {
+		return ""
+	}
+	if info, err := os.Stat(c.Root); err == nil && info.IsDir() {
+		return c.Root
+	}
+	// Recorded on another machine or in a moved checkout; fall back to the CWD.
+	return ""
+}
+
 // GetFiles returns a sorted list of all files with coverage data
 func (c *Coverage) GetFiles() []string {
 	var files []string
@@ -168,6 +202,13 @@ func Merge(coverages ...*Coverage) (*Coverage, error) {
 		if err := c.ValidateVersion(); err != nil {
 			return nil, fmt.Errorf("coverage input %d: %w", i+1, err)
 		}
+		// Keep the first root seen so a merged file still resolves its
+		// sources at report time. Shards of one run share a tree; if they
+		// somehow do not, --base-dir remains the override.
+		if result.Root == "" {
+			result.Root = c.Root
+		}
+
 		for file, posHits := range c.Positions {
 			if posHits == nil {
 				continue
@@ -188,6 +229,7 @@ func (c *Coverage) Clone() *Coverage {
 	clone := &Coverage{
 		Version:   c.Version,
 		Timestamp: c.Timestamp,
+		Root:      c.Root,
 		Positions: make(map[string]PositionHits, len(c.Positions)),
 	}
 	for file, posHits := range c.Positions {
