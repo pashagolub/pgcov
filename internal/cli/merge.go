@@ -28,7 +28,10 @@ func Merge(_ context.Context, inputs []string, outputPath string) error {
 		coverages = append(coverages, cov)
 	}
 
-	merged := coverage.Merge(coverages...)
+	merged, err := coverage.Merge(coverages...)
+	if err != nil {
+		return fmt.Errorf("cannot merge coverage files: %w", err)
+	}
 
 	if outputPath == "" || outputPath == "-" {
 		data, err := json.MarshalIndent(merged, "", "  ")
