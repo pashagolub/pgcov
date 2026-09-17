@@ -1,6 +1,9 @@
 package instrument
 
-import "fmt"
+import (
+	"fmt"
+	"strconv"
+)
 
 // FormatSignalID generates a signal ID for a coverage point.
 // Format: {file}:{startPos}:{length}
@@ -57,12 +60,16 @@ func ParseSignalID(signalID string) (file string, startPos int, length int, err 
 	return file, startPos, length, nil
 }
 
-// parseNumber safely parses a number string
+// parseNumber parses a decimal integer, rejecting anything the string does not
+// consume entirely.
+//
+// fmt.Sscanf("%d") was used here previously; it stops at the first byte that
+// does not fit the verb and still reports success, so "12abc" parsed as 12.
+// strconv.Atoi requires the whole string to be a number.
 func parseNumber(s string) (int, error) {
-	var num int
-	_, err := fmt.Sscanf(s, "%d", &num)
+	num, err := strconv.Atoi(s)
 	if err != nil {
-		return 0, fmt.Errorf("failed to parse number: %w", err)
+		return 0, fmt.Errorf("failed to parse number %q: %w", s, err)
 	}
 	return num, nil
 }
