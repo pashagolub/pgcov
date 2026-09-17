@@ -84,25 +84,26 @@ $$;
 	return root
 }
 
-// instrumentTree discovers, parses and instruments every source co-located with
-// a test under root, mirroring what cli.Run does before execution.
-func instrumentTree(t *testing.T, root string) ([]discovery.DiscoveredFile, []*instrument.InstrumentedSQL) {
+// instrumentTreeN discovers, parses and instruments every source co-located
+// with a test under root, mirroring what cli.Run does before execution. The
+// expected counts guard against a fixture that silently stopped matching.
+func instrumentTreeN(t *testing.T, root string, wantTests, wantSources int) ([]discovery.DiscoveredFile, []*instrument.InstrumentedSQL) {
 	t.Helper()
 
 	testFiles, err := discovery.DiscoverTests(root)
 	if err != nil {
 		t.Fatalf("discover tests: %v", err)
 	}
-	if len(testFiles) != 2 {
-		t.Fatalf("expected 2 test files, got %d", len(testFiles))
+	if len(testFiles) != wantTests {
+		t.Fatalf("expected %d test files, got %d", wantTests, len(testFiles))
 	}
 
 	sourceFiles, err := discovery.DiscoverCoLocatedSources(root, testFiles)
 	if err != nil {
 		t.Fatalf("discover sources: %v", err)
 	}
-	if len(sourceFiles) != 2 {
-		t.Fatalf("expected 2 source files, got %d", len(sourceFiles))
+	if len(sourceFiles) != wantSources {
+		t.Fatalf("expected %d source files, got %d", wantSources, len(sourceFiles))
 	}
 
 	var parsed []*parser.ParsedSQL
@@ -150,7 +151,7 @@ func TestParallelFiltersSourcesPerTestDirectory(t *testing.T) {
 	defer pool.Close()
 
 	root := buildCrossDirFixture(t)
-	testFiles, instrumented := instrumentTree(t, root)
+	testFiles, instrumented := instrumentTreeN(t, root, 2, 2)
 
 	executor := runner.NewExecutor(pool, config.Timeout, config.SignalTimeout, config.Verbose, instrument.DefaultChannel)
 	workerPool := runner.NewWorkerPool(executor, config.Parallelism, config.Verbose)
@@ -195,7 +196,7 @@ func TestSequentialAndParallelLoadTheSameSources(t *testing.T) {
 	defer pool.Close()
 
 	root := buildCrossDirFixture(t)
-	testFiles, instrumented := instrumentTree(t, root)
+	testFiles, instrumented := instrumentTreeN(t, root, 2, 2)
 
 	seqExec := runner.NewExecutor(pool, config.Timeout, config.SignalTimeout, config.Verbose, instrument.DefaultChannel)
 	seqRuns, err := seqExec.ExecuteBatch(ctx, testFiles, instrumented)
