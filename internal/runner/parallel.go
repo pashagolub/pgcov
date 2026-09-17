@@ -132,18 +132,9 @@ func (wp *WorkerPool) worker(ctx context.Context, workerID int, jobs <-chan *tes
 			fmt.Printf("Worker %d: Running test %s\n", workerID, job.testFile.RelativePath)
 		}
 
-		// Execute the test
-		run, err := wp.executor.Execute(ctx, job.testFile, sourceFiles)
-		if err != nil && run == nil {
-			// If execution returned an error but no run, create a failed run
-			run = &TestRun{
-				Test:      job.testFile,
-				StartTime: time.Now(),
-				EndTime:   time.Now(),
-				Status:    TestFailed,
-				Error:     err,
-			}
-		}
+		// Execute the test. Execute always returns a non-nil TestRun; a
+		// failure is reported through run.Status/run.Error, not a Go error.
+		run := wp.executor.Execute(ctx, job.testFile, sourceFiles)
 
 		results <- &testResult{
 			run:      run,

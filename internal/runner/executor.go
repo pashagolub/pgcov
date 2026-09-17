@@ -62,8 +62,14 @@ func (e *Executor) SetSetupScripts(scripts []SetupScript) {
 	e.setupSQL = scripts
 }
 
-// Execute runs a single test file and collects coverage
-func (e *Executor) Execute(ctx context.Context, testFile *discovery.DiscoveredFile, sourceFiles []*instrument.InstrumentedSQL) (*TestRun, error) {
+// Execute runs a single test file and collects coverage.
+//
+// It never fails at the Go level: every problem encountered while running the
+// test - temp-database creation, source loading, the test SQL itself - is
+// recorded on the returned TestRun as Status/Error rather than returned
+// separately. TestRun.Error is therefore the single channel through which a
+// caller learns why a test did not pass.
+func (e *Executor) Execute(ctx context.Context, testFile *discovery.DiscoveredFile, sourceFiles []*instrument.InstrumentedSQL) *TestRun {
 	testRun := &TestRun{
 		Test:      testFile,
 		StartTime: time.Now(),
@@ -88,7 +94,7 @@ func (e *Executor) Execute(ctx context.Context, testFile *discovery.DiscoveredFi
 
 	testRun.EndTime = time.Now()
 
-	return testRun, nil
+	return testRun
 }
 
 // ExecuteBatch runs multiple tests sequentially
@@ -104,14 +110,7 @@ func (e *Executor) ExecuteBatch(ctx context.Context, testFiles []discovery.Disco
 		testDir := filepath.Dir(testFiles[i].Path)
 		filteredSources := filterSourcesByDirectory(sourceFiles, testDir)
 
-		run, err := e.Execute(ctx, &testFiles[i], filteredSources)
-		if err != nil {
-			// Continue with other tests even if one fails
-			if e.verbose {
-				fmt.Printf("Test failed: %s: %v\n", testFiles[i].RelativePath, err)
-			}
-		}
-
+		run := e.Execute(ctx, &testFiles[i], filteredSources)
 		runs = append(runs, run)
 
 		// Check if context was cancelled
