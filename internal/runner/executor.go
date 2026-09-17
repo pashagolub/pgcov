@@ -69,12 +69,21 @@ func (e *Executor) SetSetupScripts(scripts []SetupScript) {
 // recorded on the returned TestRun as Status/Error rather than returned
 // separately. TestRun.Error is therefore the single channel through which a
 // caller learns why a test did not pass.
+//
+// sourceFiles may contain sources from any directory; Execute narrows them to
+// the ones co-located with testFile before loading anything. Doing this here
+// rather than in the callers is deliberate - it is the single choke point both
+// ExecuteBatch and WorkerPool.worker funnel through, so sequential and parallel
+// runs cannot diverge in which sources they load.
 func (e *Executor) Execute(ctx context.Context, testFile *discovery.DiscoveredFile, sourceFiles []*instrument.InstrumentedSQL) *TestRun {
 	testRun := &TestRun{
 		Test:      testFile,
 		StartTime: time.Now(),
 		Status:    TestPending,
 	}
+
+	// Narrow the sources to those co-located with this test.
+	sourceFiles = filterSourcesByDirectory(sourceFiles, filepath.Dir(testFile.Path))
 
 	// Create context with timeout
 	testCtx, cancel := context.WithTimeout(ctx, e.timeout)
@@ -106,11 +115,7 @@ func (e *Executor) ExecuteBatch(ctx context.Context, testFiles []discovery.Disco
 			fmt.Printf("Running test: %s\n", testFiles[i].RelativePath)
 		}
 
-		// Filter source files to only include those from the same directory as the test
-		testDir := filepath.Dir(testFiles[i].Path)
-		filteredSources := filterSourcesByDirectory(sourceFiles, testDir)
-
-		run := e.Execute(ctx, &testFiles[i], filteredSources)
+		run := e.Execute(ctx, &testFiles[i], sourceFiles)
 		runs = append(runs, run)
 
 		// Check if context was cancelled
