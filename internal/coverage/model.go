@@ -3,6 +3,8 @@ package coverage
 import (
 	"fmt"
 	"sort"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -81,10 +83,36 @@ func formatPositionKey(startPos int, length int) string {
 	return fmt.Sprintf("%d:%d", startPos, length)
 }
 
-// ParsePositionKey parses a position key back into startPos and length
+// ParsePositionKey parses a "startPos:length" key back into its two numbers.
+//
+// Both halves must be complete decimal integers. fmt.Sscanf("%d:%d") was used
+// here previously and accepted trailing garbage - "10:20junk" parsed as
+// (10, 20) with a nil error - which let a hand-edited or third-party coverage
+// file reach the reporters as plausible-looking nonsense.
 func ParsePositionKey(posKey string) (startPos int, length int, err error) {
-	_, err = fmt.Sscanf(posKey, "%d:%d", &startPos, &length)
-	return
+	startStr, lenStr, found := strings.Cut(posKey, ":")
+	if !found {
+		return 0, 0, fmt.Errorf("invalid position key %q: expected \"startPos:length\"", posKey)
+	}
+
+	startPos, err = strconv.Atoi(startStr)
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid start position in position key %q: %w", posKey, err)
+	}
+
+	length, err = strconv.Atoi(lenStr)
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid length in position key %q: %w", posKey, err)
+	}
+
+	if startPos < 0 {
+		return 0, 0, fmt.Errorf("start position must be non-negative in position key %q", posKey)
+	}
+	if length < 0 {
+		return 0, 0, fmt.Errorf("length must be non-negative in position key %q", posKey)
+	}
+
+	return startPos, length, nil
 }
 
 // GetFiles returns a sorted list of all files with coverage data
