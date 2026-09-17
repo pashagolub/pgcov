@@ -2,6 +2,7 @@ package coverage
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"sort"
 	"strconv"
@@ -12,9 +13,22 @@ import (
 // Coverage represents aggregated coverage data across all tests
 // Uses position-based coverage only (byte offsets)
 type Coverage struct {
-	Version   string                  `json:"version"`   // Schema version (e.g., "1.0")
-	Timestamp time.Time               `json:"timestamp"` // When coverage collected
-	Positions map[string]PositionHits `json:"positions"` // Key: relative file path, Value: map of position keys to hit counts
+	Version   string    `json:"version"`   // Schema version (see SchemaVersion)
+	Timestamp time.Time `json:"timestamp"` // When coverage collected
+
+	// Positions holds *executable* statements only - the PL/pgSQL and SQL
+	// function bodies instrumented with pg_notify. These are the positions a
+	// test can leave uncovered, so they are the ones the coverage percentage
+	// is computed over.
+	Positions map[string]PositionHits `json:"positions"` // Key: root-relative file path, Value: position key -> hit count
+
+	// ImplicitPositions holds DDL/DML statements, which are marked covered the
+	// moment their source file loads successfully. They are kept separate
+	// because they can never be uncovered: including them in the percentage
+	// made every CREATE TABLE a permanently-100%-covered denominator entry and
+	// inflated the headline number. Reporters still render them so those lines
+	// stay highlighted.
+	ImplicitPositions map[string]PositionHits `json:"implicit_positions,omitempty"`
 
 	// Root is the absolute discovery root the run used, i.e. the directory the
 	// keys in Positions are relative to. It is a hint for resolving sources at
@@ -55,9 +69,10 @@ func (c *Coverage) ValidateVersion() error {
 // NewCoverage creates a new Coverage instance
 func NewCoverage() *Coverage {
 	return &Coverage{
-		Version:   SchemaVersion,
-		Timestamp: time.Now(),
-		Positions: make(map[string]PositionHits),
+		Version:           SchemaVersion,
+		Timestamp:         time.Now(),
+		Positions:         make(map[string]PositionHits),
+		ImplicitPositions: make(map[string]PositionHits),
 	}
 }
 
@@ -71,6 +86,68 @@ func (c *Coverage) AddPosition(file string, startPos int, length int, hitCount i
 	}
 	posKey := formatPositionKey(startPos, length)
 	c.Positions[file][posKey] = hitCount
+}
+
+// AddImplicitPosition adds or updates coverage for a DDL/DML statement. These
+// are tracked separately from executable positions; see Coverage.
+func (c *Coverage) AddImplicitPosition(file string, startPos int, length int, hitCount int) {
+	if c.ImplicitPositions == nil {
+		c.ImplicitPositions = make(map[string]PositionHits)
+	}
+	if c.ImplicitPositions[file] == nil {
+		c.ImplicitPositions[file] = make(PositionHits)
+	}
+	c.ImplicitPositions[file][formatPositionKey(startPos, length)] = hitCount
+}
+
+// AllPositions returns the union of executable and implicit positions for a
+// file. Reporters use this for rendering so DDL/DML lines stay highlighted;
+// percentages deliberately do not, because implicit positions can never be
+// uncovered. The returned map is a fresh copy and may be nil when the file has
+// no positions at all.
+func (c *Coverage) AllPositions(file string) PositionHits {
+	exec, implicit := c.Positions[file], c.ImplicitPositions[file]
+	if len(exec) == 0 && len(implicit) == 0 {
+		return nil
+	}
+	all := make(PositionHits, len(exec)+len(implicit))
+	maps.Copy(all, implicit)
+	maps.Copy(all, exec) // executable wins on the (impossible) key collision
+	return all
+}
+
+// countHits returns how many of the given files' positions were hit at least
+// once, and how many there are in total.
+func countHits(byFile map[string]PositionHits) (covered int, total int) {
+	for _, posHits := range byFile {
+		for _, count := range posHits {
+			total++
+			if count > 0 {
+				covered++
+			}
+		}
+	}
+	return covered, total
+}
+
+// ExecutablePositionCounts returns covered and total counts over executable
+// statements - the numbers behind TotalPositionCoveragePercent.
+func (c *Coverage) ExecutablePositionCounts() (covered int, total int) {
+	return countHits(c.Positions)
+}
+
+// ImplicitPositionCounts returns covered and total counts over DDL/DML
+// statements. covered equals total whenever every source file loaded.
+func (c *Coverage) ImplicitPositionCounts() (covered int, total int) {
+	return countHits(c.ImplicitPositions)
+}
+
+// HasExecutablePositions reports whether anything measurable was instrumented.
+// When false the coverage percentage is not meaningful - there is nothing a
+// test could have covered - and callers should say so rather than print 0%.
+func (c *Coverage) HasExecutablePositions() bool {
+	_, total := c.ExecutablePositionCounts()
+	return total > 0
 }
 
 // PositionCoveragePercent calculates position coverage percentage for a file
@@ -90,25 +167,31 @@ func (c *Coverage) PositionCoveragePercent(file string) float64 {
 	return float64(covered) / float64(len(posHits)) * 100.0
 }
 
-// TotalPositionCoveragePercent calculates overall position coverage percentage
+// TotalPositionCoveragePercent calculates overall coverage across *executable*
+// statements. DDL/DML positions are excluded: they are marked covered as soon
+// as their file loads, so counting them only inflated the result - a source
+// file that is 90% DDL scored about 90% before a single assertion ran.
+//
+// Returns 0 when nothing executable was instrumented; callers that distinguish
+// "nothing to measure" from "measured nothing" should check
+// HasExecutablePositions first.
 func (c *Coverage) TotalPositionCoveragePercent() float64 {
-	totalPositions := 0
-	coveredPositions := 0
-
-	for _, posHits := range c.Positions {
-		for _, count := range posHits {
-			totalPositions++
-			if count > 0 {
-				coveredPositions++
-			}
-		}
-	}
-
-	if totalPositions == 0 {
+	covered, total := c.ExecutablePositionCounts()
+	if total == 0 {
 		return 0.0
 	}
+	return float64(covered) / float64(total) * 100.0
+}
 
-	return float64(coveredPositions) / float64(totalPositions) * 100.0
+// TotalImplicitCoveragePercent calculates coverage across DDL/DML statements.
+// This is 100% whenever every source file loaded successfully, and is reported
+// alongside - never folded into - the executable number.
+func (c *Coverage) TotalImplicitCoveragePercent() float64 {
+	covered, total := c.ImplicitPositionCounts()
+	if total == 0 {
+		return 0.0
+	}
+	return float64(covered) / float64(total) * 100.0
 }
 
 // formatPositionKey creates a string key from startPos and length
@@ -172,10 +255,20 @@ func (c *Coverage) ResolveBaseDir(explicit string) string {
 	return ""
 }
 
-// GetFiles returns a sorted list of all files with coverage data
+// GetFiles returns a sorted list of all files with coverage data, executable or
+// implicit. Reporters iterate this, so a file containing only DDL still gets a
+// section rather than disappearing from the report.
 func (c *Coverage) GetFiles() []string {
-	var files []string
+	seen := make(map[string]struct{}, len(c.Positions)+len(c.ImplicitPositions))
 	for file := range c.Positions {
+		seen[file] = struct{}{}
+	}
+	for file := range c.ImplicitPositions {
+		seen[file] = struct{}{}
+	}
+
+	files := make([]string, 0, len(seen))
+	for file := range seen {
 		files = append(files, file)
 	}
 	sort.Strings(files)
@@ -209,35 +302,45 @@ func Merge(coverages ...*Coverage) (*Coverage, error) {
 			result.Root = c.Root
 		}
 
-		for file, posHits := range c.Positions {
-			if posHits == nil {
-				continue
-			}
-			if result.Positions[file] == nil {
-				result.Positions[file] = make(PositionHits)
-			}
-			for posKey, hits := range posHits {
-				result.Positions[file][posKey] += hits
-			}
-		}
+		mergeInto(result.Positions, c.Positions)
+		mergeInto(result.ImplicitPositions, c.ImplicitPositions)
 	}
 	return result, nil
 }
 
+// mergeInto adds src's per-file hit counts into dst.
+func mergeInto(dst, src map[string]PositionHits) {
+	for file, posHits := range src {
+		if posHits == nil {
+			continue
+		}
+		if dst[file] == nil {
+			dst[file] = make(PositionHits)
+		}
+		for posKey, hits := range posHits {
+			dst[file][posKey] += hits
+		}
+	}
+}
+
 // Clone returns a deep copy of the Coverage struct
 func (c *Coverage) Clone() *Coverage {
-	clone := &Coverage{
-		Version:   c.Version,
-		Timestamp: c.Timestamp,
-		Root:      c.Root,
-		Positions: make(map[string]PositionHits, len(c.Positions)),
+	return &Coverage{
+		Version:           c.Version,
+		Timestamp:         c.Timestamp,
+		Root:              c.Root,
+		Positions:         clonePositions(c.Positions),
+		ImplicitPositions: clonePositions(c.ImplicitPositions),
 	}
-	for file, posHits := range c.Positions {
+}
+
+// clonePositions deep-copies a per-file position map.
+func clonePositions(src map[string]PositionHits) map[string]PositionHits {
+	dst := make(map[string]PositionHits, len(src))
+	for file, posHits := range src {
 		clonedHits := make(PositionHits, len(posHits))
-		for k, v := range posHits {
-			clonedHits[k] = v
-		}
-		clone.Positions[file] = clonedHits
+		maps.Copy(clonedHits, posHits)
+		dst[file] = clonedHits
 	}
-	return clone
+	return dst
 }
