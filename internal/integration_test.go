@@ -770,7 +770,7 @@ func countCoveredPositions(hits coverage.PositionHits) int {
 
 // TestSQLFunctionInstrumentation verifies that SQL-language functions are
 // correctly instrumented using CTE-based pg_notify injection instead of
-// standalone SELECT pg_notify() which breaks return types (B6).
+// standalone SELECT pg_notify() which breaks return types.
 func TestSQLFunctionInstrumentation(t *testing.T) {
 	ctx := context.Background()
 

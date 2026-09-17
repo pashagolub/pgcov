@@ -410,7 +410,7 @@ func TestFindTerminalPos(t *testing.T) {
 }
 
 func TestInstrumentBody_ReturnInBranches(t *testing.T) {
-	// B2 scenario: IF/ELSIF/ELSE with RETURN in each branch.
+	// IF/ELSIF/ELSE with RETURN in each branch.
 	// All signals must be reachable (placed before the RETURN inside each branch).
 	sql := `CREATE OR REPLACE FUNCTION check_stock(v_stock INT)
 RETURNS TEXT AS $$

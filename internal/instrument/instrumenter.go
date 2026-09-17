@@ -178,7 +178,7 @@ func instrumentBody(stmt *parser.Statement, filePath string, skipToBegin bool, u
 		if useCTE {
 			// SQL-language functions: inject coverage signal as a CTE
 			// prefix so we don't produce an extra result set that would
-			// conflict with the function's declared return type (B6).
+			// conflict with the function's declared return type.
 			ctePrefix := fmt.Sprintf("WITH _pgcov_signal AS (SELECT pg_notify('%s', '%s')) ",
 				channel, escapedSignal)
 			instrumentedBody.WriteString(ctePrefix)
