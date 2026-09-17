@@ -76,9 +76,14 @@ go test .\...
 #!/bin/bash
 set -e
 export CGO_ENABLED=1
-go build -ldflags="-s -w" -o pgcov ./cmd/pgcov
+go build -ldflags="-s -w -X main.version=$(git describe --tags --always --dirty)" -o pgcov ./cmd/pgcov
 echo "Build complete"
 ```
+
+`-X main.version=...` stamps the reported version into the binary. Without it
+`pgcov --version` falls back to the module version the Go toolchain records
+(set for `go install ...@version`) and otherwise reports `dev`.
+
 
 ### Windows (build.ps1)
 
@@ -87,7 +92,7 @@ $ErrorActionPreference = "Stop"
 $env:CGO_ENABLED = "1"
 $env:CC = "C:\msys64\mingw64\bin\gcc.exe"
 $env:PATH = "$env:PATH;C:\msys64\mingw64\bin"
-go build -ldflags="-s -w" -o pgcov.exe .\cmd\pgcov
+go build -ldflags="-s -w -X main.version=$(git describe --tags --always --dirty)" -o pgcov.exe .\cmd\pgcov
 Write-Host "Build complete"
 ```
 

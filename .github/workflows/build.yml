@@ -25,6 +25,9 @@ jobs:
 
     - name: Check out code
       uses: actions/checkout@v6
+      with:
+        # Tags are needed for `git describe` to produce a meaningful version.
+        fetch-depth: 0
 
     - name: Set up Golang
       uses: actions/setup-go@v6
@@ -34,7 +37,7 @@ jobs:
 
     - name: Build
       run: |
-        go build ./cmd/pgcov
+        go build -ldflags "-X main.version=$(git describe --tags --always --dirty)" ./cmd/pgcov
 
     - name: GolangCI-Lint
       uses: golangci/golangci-lint-action@v9
