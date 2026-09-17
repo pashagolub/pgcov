@@ -60,6 +60,13 @@ func (s *Store) Load() (*Coverage, error) {
 		return nil, fmt.Errorf("failed to parse coverage file: %w", err)
 	}
 
+	// Reject data written by an incompatible build before any caller can act
+	// on it. Doing this here covers every reader -- report, merge and any
+	// future consumer -- rather than each of them remembering to check.
+	if err := coverage.ValidateVersion(); err != nil {
+		return nil, fmt.Errorf("%s: %w", s.filePath, err)
+	}
+
 	// Ensure Positions map is initialized
 	if coverage.Positions == nil {
 		coverage.Positions = make(map[string]PositionHits)

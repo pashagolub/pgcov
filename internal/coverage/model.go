@@ -19,10 +19,33 @@ type Coverage struct {
 // PositionHits represents position hit counts for a single file
 type PositionHits map[string]int // Key: "startPos:length", Value: hit count
 
+// SchemaVersion is the coverage-file schema this build reads and writes. It is
+// the single source of truth for the Version field: Store.Load and Merge both
+// refuse data stamped with anything else, so a file produced by an incompatible
+// build fails loudly instead of being silently misinterpreted.
+const SchemaVersion = "1.0"
+
+// ValidateVersion reports whether c carries a schema version this build
+// understands. The error names the offending version and tells the user how to
+// fix it, because the remedy is to regenerate the data rather than to downgrade.
+func (c *Coverage) ValidateVersion() error {
+	if c == nil {
+		return fmt.Errorf("coverage data is nil")
+	}
+	if c.Version == SchemaVersion {
+		return nil
+	}
+	if c.Version == "" {
+		return fmt.Errorf("coverage data has no schema version (expected %q); regenerate it with 'pgcov run'", SchemaVersion)
+	}
+	return fmt.Errorf("unsupported coverage schema version %q (this build reads %q); regenerate it with 'pgcov run'",
+		c.Version, SchemaVersion)
+}
+
 // NewCoverage creates a new Coverage instance
 func NewCoverage() *Coverage {
 	return &Coverage{
-		Version:   "1.0",
+		Version:   SchemaVersion,
 		Timestamp: time.Now(),
 		Positions: make(map[string]PositionHits),
 	}
@@ -126,16 +149,24 @@ func (c *Coverage) GetFiles() []string {
 }
 
 // Merge combines multiple Coverage objects into a single Coverage by summing
-// per-position hit counts for each file. The result's Version mirrors
-// NewCoverage's "1.0" schema identifier and Timestamp is set to the current
-// time. Input coverages are not mutated; the returned Coverage owns its
-// position maps. Nil entries are skipped; an all-nil or empty input returns a
-// freshly initialized Coverage with no positions.
-func Merge(coverages ...*Coverage) *Coverage {
+// per-position hit counts for each file. The result's Version is SchemaVersion
+// and Timestamp is set to the current time. Input coverages are not mutated;
+// the returned Coverage owns its position maps. Nil entries are skipped; an
+// all-nil or empty input returns a freshly initialized Coverage with no
+// positions.
+//
+// Every non-nil input must carry a schema version this build understands.
+// Merge is the one operation that consumes files it did not write, so combining
+// mismatched schemas would produce plausible-looking wrong output -- summed hit
+// counts over keys that mean different things. It refuses instead.
+func Merge(coverages ...*Coverage) (*Coverage, error) {
 	result := NewCoverage()
-	for _, c := range coverages {
+	for i, c := range coverages {
 		if c == nil {
 			continue
+		}
+		if err := c.ValidateVersion(); err != nil {
+			return nil, fmt.Errorf("coverage input %d: %w", i+1, err)
 		}
 		for file, posHits := range c.Positions {
 			if posHits == nil {
@@ -149,7 +180,7 @@ func Merge(coverages ...*Coverage) *Coverage {
 			}
 		}
 	}
-	return result
+	return result, nil
 }
 
 // Clone returns a deep copy of the Coverage struct
