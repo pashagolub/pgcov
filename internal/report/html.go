@@ -338,10 +338,10 @@ func (r *HTMLReporter) sourcePathCandidates(filePath string) []string {
 	}
 	var out []string
 	if r.BaseDir != "" {
-		out = append(out, filepath.Join(r.BaseDir, filePath))
+		out = append(out, filepath.Join(r.BaseDir, filepath.FromSlash(filePath)))
 	}
 	if cwd, err := os.Getwd(); err == nil {
-		out = append(out, filepath.Join(cwd, filePath))
+		out = append(out, filepath.Join(cwd, filepath.FromSlash(filePath)))
 	} else {
 		out = append(out, filePath)
 	}
