@@ -39,3 +39,6 @@ Thumbs.db
 
 # Test databases (safety net - should be cleaned up)
 pgcov_test_*
+
+# Working documents kept locally, not part of the repository
+FINDINGS.md
