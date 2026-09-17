@@ -152,7 +152,10 @@ func (r *HTMLReporter) writeHeader(cov *coverage.Coverage, files []string, write
 
 // writeFileDetailWithSource writes detailed coverage for a single file with actual source code
 func (r *HTMLReporter) writeFileDetailWithSource(file string, cov *coverage.Coverage, writer io.Writer, fileIndex int) error {
-	posHits := cov.Positions[file]
+	// Render executable and implicit positions alike: the split exists so
+	// that DDL/DML does not distort the percentage, not to stop those lines
+	// being highlighted.
+	posHits := cov.AllPositions(file)
 
 	// Write file pre tag with ID and hidden by default
 	displayStyle := "display: none"

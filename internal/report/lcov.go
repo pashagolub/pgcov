@@ -37,7 +37,9 @@ func (r *LCOVReporter) Format(cov *coverage.Coverage, writer io.Writer) error {
 
 	// Write LCOV format for each file
 	for _, file := range files {
-		posHits := cov.Positions[file]
+		// Executable and implicit positions are both emitted; the split only
+		// affects how the percentage is computed, not what is reported.
+		posHits := cov.AllPositions(file)
 		if err := r.formatFileFromPositions(file, posHits, writer); err != nil {
 			return err
 		}

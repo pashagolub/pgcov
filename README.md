@@ -84,7 +84,8 @@ On success pgcov prints a summary and persists the raw coverage data:
 
 ```
 Tests:    3 passed, 0 failed, 3 total
-Coverage: 87.50%
+Coverage: 87.50% executable (14/16 statements)
+          12/12 DDL/DML statements loaded
 Time:     1.234s
 
 Coverage data written to .pgcov/coverage.json
