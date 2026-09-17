@@ -188,12 +188,24 @@ func Run(ctx context.Context, config *Config, searchPath string) (int, error) {
 		return 1, fmt.Errorf("coverage collection failed: %w", err)
 	}
 
-	// Step 8: Save coverage data. The discovery root is recorded alongside it
-	// so `pgcov report` can resolve the keys without being told where they came
-	// from: they are relative to this directory, not to the working directory.
+	// Step 8: Save coverage data, fingerprinting each source as it was when
+	// these positions were computed. Positions are byte offsets, so a later
+	// edit silently invalidates them; the fingerprint lets `report` and `merge`
+	// notice instead of painting hit counts onto unrelated spans.
+	//
+	// The discovery root is recorded alongside them so `pgcov report` can
+	// resolve the keys without being told where they came from.
 	cov := collector.Coverage()
 	if absRoot, err := filepath.Abs(searchPath); err == nil {
 		cov.Root = absRoot
+	}
+
+	for i := range sourceFiles {
+		info, err := coverage.HashFile(sourceFiles[i].Path)
+		if err != nil {
+			return 1, fmt.Errorf("failed to fingerprint source: %w", err)
+		}
+		cov.AddSource(sourceFiles[i].RelativePath, info)
 	}
 
 	store := coverage.NewStore(config.CoverageFile)

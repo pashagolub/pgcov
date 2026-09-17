@@ -53,6 +53,15 @@ func Report(_ context.Context, coverageFile string, format string, outputPath st
 	}
 
 
+	// Step 3b: Warn when a source has changed since the run. Positions are byte
+	// offsets, so an edit shifts every offset past it and the report would
+	// annotate the wrong spans without saying so. This is a warning, not an
+	// error: a stale report is still the best available information, and the
+	// user may have only moved the tree.
+	for _, w := range cov.VerifySources(baseDir) {
+		fmt.Fprintf(os.Stderr, "Warning: %s\n", w)
+	}
+
 	// Step 4: Format and output
 	var writer *os.File
 	if outputPath == "-" || outputPath == "" {
