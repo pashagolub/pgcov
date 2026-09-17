@@ -105,7 +105,7 @@ func Run(ctx context.Context, config *Config, searchPath string) (int, error) {
 	}
 
 	// Step 2: Discover source files (co-located with tests)
-	sourceFiles, err := discovery.DiscoverCoLocatedSources(testFiles)
+	sourceFiles, err := discovery.DiscoverCoLocatedSources(searchPath, testFiles)
 	if err != nil {
 		return 1, fmt.Errorf("failed to discover source files: %w", err)
 	}
@@ -188,9 +188,16 @@ func Run(ctx context.Context, config *Config, searchPath string) (int, error) {
 		return 1, fmt.Errorf("coverage collection failed: %w", err)
 	}
 
-	// Step 8: Save coverage data
+	// Step 8: Save coverage data. The discovery root is recorded alongside it
+	// so `pgcov report` can resolve the keys without being told where they came
+	// from: they are relative to this directory, not to the working directory.
+	cov := collector.Coverage()
+	if absRoot, err := filepath.Abs(searchPath); err == nil {
+		cov.Root = absRoot
+	}
+
 	store := coverage.NewStore(config.CoverageFile)
-	if err := store.Save(collector.Coverage()); err != nil {
+	if err := store.Save(cov); err != nil {
 		return 1, fmt.Errorf("failed to save coverage: %w", err)
 	}
 
