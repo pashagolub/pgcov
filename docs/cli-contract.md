@@ -109,7 +109,7 @@ Generate coverage report from existing coverage data.
 
 ```json
 {
-  "version": "1.0",
+  "version": "2.0",
   "timestamp": "2026-08-14T16:00:00Z",
   "positions": {
     "src/auth.sql": {
@@ -206,16 +206,21 @@ Configurable via: `--coverage-file` flag on `run` and `report`
   "properties": {
     "version": {
       "type": "string",
-      "description": "Schema version (semantic versioning)"
+      "const": "2.0",
+      "description": "Coverage-file schema version. Readers must reject any other value rather than guess; regenerate the data with 'pgcov run'."
     },
     "timestamp": {
       "type": "string",
       "format": "date-time",
       "description": "RFC 3339 timestamp of coverage collection"
     },
+    "root": {
+      "type": "string",
+      "description": "Absolute discovery root the run used; the directory the keys in `positions` are relative to. A hint for source resolution at report time: `--base-dir` overrides it and it is ignored when the directory no longer exists. Omitted when unknown."
+    },
     "positions": {
       "type": "object",
-      "description": "Per-file position-based coverage. Key: relative file path. Value: position -> hit count map.",
+      "description": "Per-file position-based coverage. Key: file path relative to the run's discovery root, normalised to forward slashes on every platform. Value: position -> hit count map.",
       "additionalProperties": {
         "$ref": "#/definitions/PositionHits"
       }
@@ -238,7 +243,7 @@ Configurable via: `--coverage-file` flag on `run` and `report`
 
 ```json
 {
-  "version": "1.0",
+  "version": "2.0",
   "timestamp": "2026-08-14T16:00:00Z",
   "positions": {
     "src/auth.sql": {

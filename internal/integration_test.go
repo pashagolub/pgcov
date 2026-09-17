@@ -88,7 +88,7 @@ func TestEndToEndWithTestcontainers(t *testing.T) {
 		t.Logf("Discovered %d test file(s)", len(testFiles))
 
 		// Discover source files
-		sourceFiles, err := discovery.DiscoverCoLocatedSources(testFiles)
+		sourceFiles, err := discovery.DiscoverCoLocatedSources(testDir, testFiles)
 		if err != nil {
 			t.Fatalf("Failed to discover sources: %v", err)
 		}
@@ -379,7 +379,7 @@ func TestOrderIndependence(t *testing.T) {
 	t.Logf("Found %d test files for order testing", len(testFiles))
 
 	// Discover and instrument source files
-	sourceFiles, err := discovery.DiscoverCoLocatedSources(testFiles)
+	sourceFiles, err := discovery.DiscoverCoLocatedSources(testDir, testFiles)
 	if err != nil {
 		t.Fatalf("Failed to discover sources: %v", err)
 	}
@@ -569,7 +569,7 @@ func TestTestIndependence(t *testing.T) {
 	t.Logf("Using test file: %s", testFile.RelativePath)
 
 	// Discover and instrument source files
-	sourceFiles, err := discovery.DiscoverCoLocatedSources(testFiles)
+	sourceFiles, err := discovery.DiscoverCoLocatedSources(testDir, testFiles)
 	if err != nil {
 		t.Fatalf("Failed to discover sources: %v", err)
 	}
