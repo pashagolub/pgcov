@@ -83,22 +83,33 @@ func (s *TestSummary) ExitCode() int {
 	return 1
 }
 
-// FormatFailedTests renders one human-readable line per failed test run,
-// prefixed with "FAILED ". Runs that are not TestFailed (or have no Error)
-// are skipped. The returned slice is nil when there is nothing to report,
-// so callers can print it directly with no extra guarding. Output is built
-// (not printed) here so it stays unit-testable without a live database.
+// FormatFailedTests renders one human-readable line per test run that did not
+// pass, so users do not have to re-run with --verbose to see why. Failures are
+// prefixed "FAILED " and per-test timeouts "TIMEOUT ", keeping the two apart in
+// the summary block; runs that passed, are still pending, or carry no Error are
+// skipped. The returned slice is nil when there is nothing to report, so callers
+// can print it directly with no extra guarding. Output is built (not printed)
+// here so it stays unit-testable without a live database.
 func FormatFailedTests(runs []*TestRun) []string {
 	var lines []string
 	for _, run := range runs {
-		if run == nil || run.Status != TestFailed || run.Error == nil {
+		if run == nil || run.Error == nil {
+			continue
+		}
+		var prefix string
+		switch run.Status {
+		case TestFailed:
+			prefix = "FAILED"
+		case TestTimeout:
+			prefix = "TIMEOUT"
+		default:
 			continue
 		}
 		relPath := ""
 		if run.Test != nil {
 			relPath = run.Test.RelativePath
 		}
-		lines = append(lines, fmt.Sprintf("FAILED %s: %v", relPath, run.Error))
+		lines = append(lines, fmt.Sprintf("%s %s: %v", prefix, relPath, run.Error))
 	}
 	return lines
 }

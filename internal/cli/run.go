@@ -205,8 +205,17 @@ func Run(ctx context.Context, config *Config, searchPath string) (int, error) {
 		fmt.Println(line)
 	}
 	fmt.Printf("\n")
-	fmt.Printf("Tests:    %d passed, %d failed, %d total\n",
-		summary.PassedTests, summary.FailedTests, summary.TotalTests)
+	// Timed-out tests are reported separately from failures so a suite that
+	// is merely too slow is distinguishable from one that is broken. The
+	// segment is omitted entirely when nothing timed out, keeping the
+	// common-case output unchanged.
+	if summary.TimedOutTests > 0 {
+		fmt.Printf("Tests:    %d passed, %d failed, %d timed out, %d total\n",
+			summary.PassedTests, summary.FailedTests, summary.TimedOutTests, summary.TotalTests)
+	} else {
+		fmt.Printf("Tests:    %d passed, %d failed, %d total\n",
+			summary.PassedTests, summary.FailedTests, summary.TotalTests)
+	}
 	fmt.Printf("Coverage: %.2f%%\n", coveragePercent)
 	fmt.Printf("Time:     %v\n", time.Since(startTime).Round(time.Millisecond))
 	fmt.Printf("\n")
