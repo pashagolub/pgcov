@@ -9,6 +9,9 @@ pgcov.exe
 *.so
 *.dylib
 
+# Coverage artifact written by the integration tests
+/internal/coverage.json
+
 # Go build artifacts
 *.test
 *.out
