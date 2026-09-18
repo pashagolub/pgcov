@@ -7,35 +7,50 @@ import (
 	"strings"
 )
 
-// Discover recursively finds all SQL files in the given directory
+// Discover recursively finds all SQL files under rootPath.
+//
+// Each file's RelativePath is computed against rootPath and normalised to
+// forward slashes. That path becomes the coverage-file key, so it must not
+// depend on where the process happens to be running: it previously used
+// filepath.Rel(cwd, path), which made the same source file key differently
+// depending on the directory pgcov was invoked from, and carried OS-native
+// separators that did not survive a mixed-OS CI matrix.
 func Discover(rootPath string) ([]DiscoveredFile, error) {
-	absRoot, err := filepath.Abs(rootPath)
+	return discoverRelativeTo(rootPath, rootPath)
+}
+
+// discoverRelativeTo walks scanRoot but expresses every RelativePath against
+// relRoot. Splitting the two lets DiscoverCoLocatedSources scan individual test
+// directories while still keying every file against the run's single discovery
+// root - without that, sources in different directories would collapse onto the
+// same bare filename.
+func discoverRelativeTo(scanRoot, relRoot string) ([]DiscoveredFile, error) {
+	absScan, err := filepath.Abs(scanRoot)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get absolute path: %w", err)
+	}
+
+	absRel, err := filepath.Abs(relRoot)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
 	// Check if directory exists
-	info, err := os.Stat(absRoot)
+	info, err := os.Stat(absScan)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("directory not found: %s", absRoot)
+			return nil, fmt.Errorf("directory not found: %s", absScan)
 		}
 		return nil, fmt.Errorf("failed to access directory: %w", err)
 	}
 
 	if !info.IsDir() {
-		return nil, fmt.Errorf("path is not a directory: %s", absRoot)
-	}
-
-	// Get current working directory to make paths relative to it
-	cwd, err := os.Getwd()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current directory: %w", err)
+		return nil, fmt.Errorf("path is not a directory: %s", absScan)
 	}
 
 	var files []DiscoveredFile
 
-	err = filepath.Walk(absRoot, func(path string, info os.FileInfo, err error) error {
+	err = filepath.Walk(absScan, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			// Skip directories we can't access
 			if os.IsPermission(err) {
@@ -54,11 +69,13 @@ func Discover(rootPath string) ([]DiscoveredFile, error) {
 			return nil
 		}
 
-		// Make path relative to current working directory for consistency
-		relPath, err := filepath.Rel(cwd, path)
+		// Key the file against the discovery root, not the process CWD, and
+		// use forward slashes so coverage data is portable across platforms.
+		relPath, err := filepath.Rel(absRel, path)
 		if err != nil {
 			return fmt.Errorf("failed to get relative path: %w", err)
 		}
+		relPath = filepath.ToSlash(relPath)
 
 		// Classify the file
 		fileType := ClassifyFile(filepath.Base(path))
@@ -114,9 +131,16 @@ func DiscoverSources(rootPath string) ([]DiscoveredFile, error) {
 	return sourceFiles, nil
 }
 
-// DiscoverCoLocatedSources finds source files in the same directories as test files
-// This implements the co-location strategy where tests and source code are kept together
-func DiscoverCoLocatedSources(testFiles []DiscoveredFile) ([]DiscoveredFile, error) {
+// DiscoverCoLocatedSources finds source files in the same directories as test
+// files. This implements the co-location strategy where tests and source code
+// are kept together.
+//
+// root is the run's discovery root: every returned RelativePath is expressed
+// against it, matching what Discover(root) would have produced. Passing the
+// individual test directory instead would reduce each source to its bare
+// filename, so two "functions.sql" files in different directories would share
+// a coverage key.
+func DiscoverCoLocatedSources(root string, testFiles []DiscoveredFile) ([]DiscoveredFile, error) {
 	// Collect unique directories containing test files
 	testDirs := make(map[string]bool)
 	for _, test := range testFiles {
@@ -128,12 +152,15 @@ func DiscoverCoLocatedSources(testFiles []DiscoveredFile) ([]DiscoveredFile, err
 	seenFiles := make(map[string]bool) // Avoid duplicates
 
 	for testDir := range testDirs {
-		files, err := DiscoverSources(testDir)
+		files, err := discoverRelativeTo(testDir, root)
 		if err != nil {
 			return nil, fmt.Errorf("failed to discover sources in %s: %w", testDir, err)
 		}
 
 		for _, file := range files {
+			if file.Type != FileTypeSource {
+				continue
+			}
 			if !seenFiles[file.Path] {
 				sourceFiles = append(sourceFiles, file)
 				seenFiles[file.Path] = true

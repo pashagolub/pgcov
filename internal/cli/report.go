@@ -38,6 +38,11 @@ func Report(_ context.Context, coverageFile string, format string, outputPath st
 		return err
 	}
 
+	// Fall back to the discovery root recorded by the run. Coverage keys are
+	// relative to that root, so resolving them against the working directory
+	// only works when the two happen to coincide.
+	baseDir = cov.ResolveBaseDir(baseDir)
+
 	// Step 3a: Forward baseDir to formatters that support source-resolution.
 	// The JSON reporter embeds no source and ignores BaseDir, so the
 	// type-assertion fall-through is intentional.
