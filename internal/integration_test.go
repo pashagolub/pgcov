@@ -997,3 +997,81 @@ func verifyStatelessExecution(run1, run2 *runner.TestRun) error {
 	}
 	return nil
 }
+
+// TestExplicitSourceOrder checks that --source loads files in the given order
+// rather than lexically: testdata/ordered/consumer.sql sorts before schema.sql
+// but needs the schema it creates.
+func TestExplicitSourceOrder(t *testing.T) {
+	ctx := context.Background()
+
+	pgContainer, err := postgres.Run(ctx,
+		"docker.io/postgres:16-alpine",
+		postgres.WithDatabase("testdb"),
+		postgres.WithUsername("testuser"),
+		postgres.WithPassword("testpass"),
+		testcontainers.WithWaitStrategy(
+			wait.ForLog("database system is ready to accept connections").
+				WithOccurrence(2).
+				WithStartupTimeout(60*time.Second)),
+	)
+	if err != nil {
+		t.Fatalf("Failed to start PostgreSQL container: %v", err)
+	}
+	defer func() {
+		if err := pgContainer.Terminate(ctx); err != nil {
+			t.Logf("Failed to terminate container: %v", err)
+		}
+	}()
+
+	host, _ := pgContainer.Host(ctx)
+	port, _ := pgContainer.MappedPort(ctx, "5432")
+	connString := fmt.Sprintf("host=%s port=%s user=testuser password=testpass dbname=testdb sslmode=prefer",
+		host, port.Port())
+
+	testDir := "../testdata/ordered"
+	newConfig := func() *types.Config {
+		return &types.Config{
+			ConnectionString: connString,
+			Timeout:          30 * time.Second,
+			Parallelism:      1,
+			CoverageFile:     filepath.Join(t.TempDir(), "coverage.json"),
+		}
+	}
+
+	t.Run("LexicalOrderFails", func(t *testing.T) {
+		exitCode, err := cli.Run(ctx, newConfig(), testDir)
+		if err != nil {
+			t.Fatalf("Run returned error: %v", err)
+		}
+		if exitCode == 0 {
+			t.Fatal("expected failure when sources load lexically (consumer.sql before schema.sql)")
+		}
+	})
+
+	t.Run("ExplicitOrderPasses", func(t *testing.T) {
+		config := newConfig()
+		config.SourceFiles = []string{
+			filepath.Join(testDir, "schema.sql"),
+			filepath.Join(testDir, "consumer.sql"),
+		}
+		exitCode, err := cli.Run(ctx, config, testDir)
+		if err != nil {
+			t.Fatalf("Run returned error: %v", err)
+		}
+		if exitCode != 0 {
+			t.Fatalf("exit code = %d, want 0", exitCode)
+		}
+
+		cov, err := coverage.NewStore(config.CoverageFile).Load()
+		if err != nil {
+			t.Fatalf("Failed to load coverage: %v", err)
+		}
+		hits, ok := cov.Positions["consumer.sql"]
+		if !ok {
+			t.Fatalf("no coverage for consumer.sql; files = %v", cov.GetFiles())
+		}
+		if countCoveredPositions(hits) == 0 {
+			t.Error("consumer.sql has no covered positions; quoted LANGUAGE 'plpgsql' body was not instrumented")
+		}
+	})
+}

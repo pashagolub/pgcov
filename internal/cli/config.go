@@ -43,6 +43,7 @@ const (
 	FlagParallel      = "parallel"
 	FlagCoverageFile  = "coverage-file"
 	FlagSetup         = "setup"
+	FlagSource        = "source"
 	FlagVerbose       = "verbose"
 	FlagFailUnder     = "fail-under"
 )
@@ -66,6 +67,7 @@ type RunFlags struct {
 	Parallel      int
 	CoverageFile  string
 	SetupFiles    []string
+	SourceFiles   []string
 	Verbose       bool
 	FailUnder     float64
 }
@@ -96,6 +98,9 @@ func ApplyFlagsToConfig(c *Config, set FlagLookup, f RunFlags) {
 	}
 	if set.IsSet(FlagSetup) {
 		c.SetupFiles = f.SetupFiles
+	}
+	if set.IsSet(FlagSource) {
+		c.SourceFiles = f.SourceFiles
 	}
 	if set.IsSet(FlagVerbose) {
 		c.Verbose = f.Verbose

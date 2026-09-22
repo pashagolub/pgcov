@@ -124,6 +124,7 @@ pgcov --version             # Show version
 | `--parallel` | `1` | Maximum concurrent tests; `1` = sequential, values above `100` are rejected |
 | `--coverage-file` | `.pgcov/coverage.json` | Coverage data output path |
 | `--setup` | — | SQL file(s) — globs allowed — run verbatim in each test's temporary database before the instrumented sources are loaded. Repeatable; order preserved |
+| `--source` | — | Source file(s) — globs allowed — to instrument and load, in this order, for every test instead of the sources co-located with each test. Repeatable; order preserved |
 | `--verbose` | `false` | Enable debug output |
 
 ### `pgcov report` flags
@@ -161,6 +162,14 @@ auth/
 ```
 
 Sources are loaded in that order for every test in the directory. If a prerequisite lives **outside** the test directory (shared/global schema), load it verbatim with the repeatable `--setup` flag — setup runs before the instrumented sources and is not counted as covered source.
+
+When renaming is not an option (the files are embedded or referenced elsewhere by name), list the sources explicitly with the repeatable `--source` flag. It replaces co-located discovery: only the listed files are instrumented and loaded, in the order given, for every test:
+
+```bash
+pgcov run . --connection "..."   --source sql/init.sql --source sql/cron.sql --source sql/ddl.sql
+```
+
+Globs are allowed and expand in sorted order; a pattern that matches nothing is an error, and `*_test.sql` files are rejected.
 
 ### Exit Codes
 
