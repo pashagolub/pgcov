@@ -1,4 +1,4 @@
-[![Coverage Status](https://coveralls.io/repos/github/cybertec-postgresql/pgcov/badge.svg)](https://coveralls.io/github/cybertec-postgresql/pgcov)
+[![Coverage Status](https://coveralls.io/repos/github/pashagolub/pgcov/badge.svg?branch=master)](https://coveralls.io/github/pashagolub/pgcov?branch=master)
 
 # pgcov
 
