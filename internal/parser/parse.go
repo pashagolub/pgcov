@@ -160,8 +160,7 @@ func isIdent(tok pglex.Token, word string) bool {
 func extractLanguage(tokens []pglex.Token) string {
 	for i := 0; i < len(tokens)-1; i++ {
 		if isIdent(tokens[i], "LANGUAGE") {
-			// The next token is the language name
-			return strings.ToLower(tokens[i+1].Text)
+			return languageName(tokens[i+1])
 		}
 	}
 	return ""
@@ -172,7 +171,7 @@ func extractLanguage(tokens []pglex.Token) string {
 func extractDOLanguage(tokens []pglex.Token) string {
 	for i := 0; i < len(tokens)-1; i++ {
 		if isIdent(tokens[i], "LANGUAGE") {
-			return strings.ToLower(tokens[i+1].Text)
+			return languageName(tokens[i+1])
 		}
 	}
 	return ""
@@ -263,4 +262,10 @@ func bodyDelimiterLen(tokenText string) int {
 		return 1
 	}
 	return 0
+}
+
+// languageName lowercases a LANGUAGE token, accepting the quoted spelling
+// (LANGUAGE 'plpgsql') that PostgreSQL still allows.
+func languageName(tok pglex.Token) string {
+	return strings.ToLower(strings.Trim(tok.Text, `'"`))
 }

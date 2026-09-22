@@ -62,7 +62,7 @@ pgcov/
 ```
 1. Discovery   → walk dirs, classify *.sql vs *_test.sql
 2. Parsing     → pglex token scan → []*Statement with byte offsets
-3. Instrumentation → inject PERFORM pg_notify('coverage_signal', '<file>:<start>:<len>')
+3. Instrumentation → inject EXECUTE 'SELECT pg_notify(...)' with '<file>:<start>:<len>' (EXECUTE keeps FOUND intact)
                      into PL/pgSQL/SQL function bodies; mark other DDL implicitly covered
 4. Temp DB     → CREATE DATABASE pgcov_test_<yyyymmdd_hhmmss>_<4-byte hex>
 5. Deploy      → execute instrumented SQL in temp DB

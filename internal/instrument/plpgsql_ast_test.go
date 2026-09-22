@@ -1,7 +1,6 @@
 package instrument
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -109,8 +108,8 @@ $$ LANGUAGE plpgsql;`
 	// We just verify that PERFORM statements exist for each coverage point
 	for _, cp := range instrumented.Locations {
 		signalID := cp.SignalID
-		if !strings.Contains(instrumented.InstrumentedText, fmt.Sprintf("PERFORM pg_notify('pgcov', '%s')", signalID)) {
-			t.Errorf("Missing PERFORM pg_notify for signal %s", signalID)
+		if !strings.Contains(instrumented.InstrumentedText, plpgsqlSignal("pgcov", signalID)) {
+			t.Errorf("Missing signal for %s", signalID)
 		}
 	}
 }
@@ -300,7 +299,7 @@ $$ LANGUAGE plpgsql;`
 
 	// The assignment "x := x + 1" should have NOTIFY *after* it.
 	assignSignal := coveragePoints[0].SignalID
-	assignNotify := fmt.Sprintf("PERFORM pg_notify('pgcov', '%s');", assignSignal)
+	assignNotify := plpgsqlSignal("pgcov", assignSignal)
 	assignIdx := strings.Index(instrumentedSQL, assignNotify)
 	assignStmtIdx := strings.Index(instrumentedSQL, "x := x + 1")
 	if assignIdx < 0 || assignStmtIdx < 0 {
@@ -312,7 +311,7 @@ $$ LANGUAGE plpgsql;`
 
 	// The RETURN should have NOTIFY *before* it (terminal statement).
 	returnSignal := coveragePoints[1].SignalID
-	returnNotify := fmt.Sprintf("PERFORM pg_notify('pgcov', '%s');", returnSignal)
+	returnNotify := plpgsqlSignal("pgcov", returnSignal)
 	returnIdx := strings.Index(instrumentedSQL, returnNotify)
 	returnStmtIdx := strings.Index(instrumentedSQL, "RETURN x")
 	if returnIdx < 0 || returnStmtIdx < 0 {
@@ -347,7 +346,7 @@ $$ LANGUAGE plpgsql;`
 
 	// RAISE NOTICE is non-terminal — NOTIFY should come after it.
 	raiseNoticeSignal := coveragePoints[0].SignalID
-	raiseNoticeNotify := fmt.Sprintf("PERFORM pg_notify('pgcov', '%s');", raiseNoticeSignal)
+	raiseNoticeNotify := plpgsqlSignal("pgcov", raiseNoticeSignal)
 	raiseNoticeIdx := strings.Index(instrumentedSQL, raiseNoticeNotify)
 	raiseNoticeStmtIdx := strings.Index(instrumentedSQL, "RAISE NOTICE")
 	if raiseNoticeIdx < 0 || raiseNoticeStmtIdx < 0 {
@@ -359,7 +358,7 @@ $$ LANGUAGE plpgsql;`
 
 	// RAISE EXCEPTION is terminal — NOTIFY should come before it.
 	raiseExcSignal := coveragePoints[1].SignalID
-	raiseExcNotify := fmt.Sprintf("PERFORM pg_notify('pgcov', '%s');", raiseExcSignal)
+	raiseExcNotify := plpgsqlSignal("pgcov", raiseExcSignal)
 	raiseExcIdx := strings.Index(instrumentedSQL, raiseExcNotify)
 	raiseExcStmtIdx := strings.Index(instrumentedSQL, "RAISE EXCEPTION")
 	if raiseExcIdx < 0 || raiseExcStmtIdx < 0 {
@@ -439,7 +438,7 @@ $$ LANGUAGE plpgsql;`
 	// inside the branch—not after it (which would be unreachable).
 	returns := []string{"RETURN 'out_of_stock'", "RETURN 'low_stock'", "RETURN 'in_stock'"}
 	for i, cp := range coveragePoints {
-		notify := fmt.Sprintf("PERFORM pg_notify('pgcov', '%s');", cp.SignalID)
+		notify := plpgsqlSignal("pgcov", cp.SignalID)
 		notifyIdx := strings.Index(instrumentedSQL, notify)
 		returnIdx := strings.Index(instrumentedSQL, returns[i])
 		if notifyIdx < 0 || returnIdx < 0 {
@@ -461,7 +460,7 @@ $$ LANGUAGE plpgsql;`
 		// Check a narrow window before the keyword for a rogue PERFORM.
 		before := instrumentedSQL[max(0, kwIdx-80):kwIdx]
 		// There should be a RETURN between the PERFORM and the keyword boundary.
-		lastPerform := strings.LastIndex(before, "PERFORM pg_notify")
+		lastPerform := strings.LastIndex(before, "EXECUTE 'SELECT pg_notify")
 		lastReturn := strings.LastIndex(before, "RETURN")
 		if lastPerform >= 0 && lastReturn >= 0 && lastPerform > lastReturn {
 			t.Errorf("unreachable PERFORM found between RETURN and %s", kw)
@@ -498,7 +497,7 @@ $$ LANGUAGE plpgsql;`
 	// First two are in IF/ELSIF branches with RAISE EXCEPTION (terminal).
 	// Signals must appear before the RAISE EXCEPTION.
 	for i, target := range []string{"RAISE EXCEPTION 'negative", "RAISE EXCEPTION 'zero"} {
-		notify := fmt.Sprintf("PERFORM pg_notify('pgcov', '%s');", coveragePoints[i].SignalID)
+		notify := plpgsqlSignal("pgcov", coveragePoints[i].SignalID)
 		notifyIdx := strings.Index(instrumentedSQL, notify)
 		stmtIdx := strings.Index(instrumentedSQL, target)
 		if notifyIdx < 0 || stmtIdx < 0 {
@@ -510,7 +509,7 @@ $$ LANGUAGE plpgsql;`
 	}
 
 	// Third is RAISE NOTICE (non-terminal, standalone). Signal should come after.
-	notify2 := fmt.Sprintf("PERFORM pg_notify('pgcov', '%s');", coveragePoints[2].SignalID)
+	notify2 := plpgsqlSignal("pgcov", coveragePoints[2].SignalID)
 	notifyIdx2 := strings.Index(instrumentedSQL, notify2)
 	noticeIdx := strings.Index(instrumentedSQL, "RAISE NOTICE")
 	if notifyIdx2 < 0 || noticeIdx < 0 {
@@ -551,21 +550,21 @@ $$ LANGUAGE plpgsql;`
 
 	// cp0: IF ... result := 'positive' — no terminal, signal after.
 	assign := "result := 'positive'"
-	assignNotify := fmt.Sprintf("PERFORM pg_notify('pgcov', '%s');", coveragePoints[0].SignalID)
+	assignNotify := plpgsqlSignal("pgcov", coveragePoints[0].SignalID)
 	if strings.Index(instrumentedSQL, assignNotify) < strings.Index(instrumentedSQL, assign) {
 		t.Error("assignment branch: NOTIFY should come AFTER the assignment")
 	}
 
 	// cp1: ELSE RETURN 'non-positive' — terminal inside branch, signal before.
 	ret1 := "RETURN 'non-positive'"
-	retNotify1 := fmt.Sprintf("PERFORM pg_notify('pgcov', '%s');", coveragePoints[1].SignalID)
+	retNotify1 := plpgsqlSignal("pgcov", coveragePoints[1].SignalID)
 	if strings.Index(instrumentedSQL, retNotify1) > strings.Index(instrumentedSQL, ret1) {
 		t.Error("ELSE RETURN branch: NOTIFY should come BEFORE the RETURN")
 	}
 
 	// cp2: standalone RETURN result — terminal at start, signal before.
 	ret2 := "RETURN result"
-	retNotify2 := fmt.Sprintf("PERFORM pg_notify('pgcov', '%s');", coveragePoints[2].SignalID)
+	retNotify2 := plpgsqlSignal("pgcov", coveragePoints[2].SignalID)
 	if strings.Index(instrumentedSQL, retNotify2) > strings.Index(instrumentedSQL, ret2) {
 		t.Error("standalone RETURN: NOTIFY should come BEFORE the RETURN")
 	}

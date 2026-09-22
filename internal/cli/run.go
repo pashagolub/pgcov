@@ -18,43 +18,90 @@ import (
 	"github.com/cybertec-postgresql/pgcov/internal/runner"
 )
 
-// loadSetupScripts expands the given file patterns (globs allowed) and reads
-// each matched .sql file into a SetupScript. Patterns are processed in the
-// order given; files matched by a single glob are sorted for determinism.
-func loadSetupScripts(patterns []string) ([]runner.SetupScript, error) {
-	var scripts []runner.SetupScript
+// expandPatterns resolves file patterns (globs allowed) to absolute paths.
+// Patterns are processed in the order given; files matched by a single glob
+// are sorted for determinism, and duplicates are dropped.
+func expandPatterns(kind string, patterns []string) ([]string, error) {
+	var files []string
 	seen := make(map[string]bool)
 
 	for _, pattern := range patterns {
 		matches, err := filepath.Glob(pattern)
 		if err != nil {
-			return nil, fmt.Errorf("invalid setup pattern %q: %w", pattern, err)
+			return nil, fmt.Errorf("invalid %s pattern %q: %w", kind, pattern, err)
 		}
 		if len(matches) == 0 {
 			// Treat a non-glob path that doesn't exist as an explicit error so
-			// typos surface immediately rather than silently skipping setup.
-			return nil, fmt.Errorf("setup file/pattern matched nothing: %q", pattern)
+			// typos surface immediately rather than silently skipping it.
+			return nil, fmt.Errorf("%s file/pattern matched nothing: %q", kind, pattern)
 		}
 		sort.Strings(matches)
 		for _, m := range matches {
 			abs, err := filepath.Abs(m)
 			if err != nil {
-				return nil, fmt.Errorf("failed to resolve setup file %q: %w", m, err)
+				return nil, fmt.Errorf("failed to resolve %s file %q: %w", kind, m, err)
 			}
 			if seen[abs] {
 				continue
 			}
 			seen[abs] = true
-
-			data, err := os.ReadFile(m)
-			if err != nil {
-				return nil, fmt.Errorf("failed to read setup file %q: %w", m, err)
-			}
-			scripts = append(scripts, runner.SetupScript{Name: m, SQL: string(data)})
+			files = append(files, abs)
 		}
 	}
 
+	return files, nil
+}
+
+// loadSetupScripts reads each file matched by patterns into a SetupScript.
+func loadSetupScripts(patterns []string) ([]runner.SetupScript, error) {
+	files, err := expandPatterns("setup", patterns)
+	if err != nil {
+		return nil, err
+	}
+	var scripts []runner.SetupScript
+	for _, f := range files {
+		data, err := os.ReadFile(f)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read setup file %q: %w", f, err)
+		}
+		scripts = append(scripts, runner.SetupScript{Name: f, SQL: string(data)})
+	}
 	return scripts, nil
+}
+
+// explicitSources builds the source list from --source patterns. Files are
+// keyed relative to searchPath, like discovered sources, so coverage reports
+// resolve them the same way.
+func explicitSources(searchPath string, patterns []string) ([]discovery.DiscoveredFile, error) {
+	files, err := expandPatterns("source", patterns)
+	if err != nil {
+		return nil, err
+	}
+	absRoot, err := filepath.Abs(searchPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get absolute path: %w", err)
+	}
+	var sources []discovery.DiscoveredFile
+	for _, f := range files {
+		if discovery.ClassifyFile(filepath.Base(f)) != discovery.FileTypeSource {
+			return nil, fmt.Errorf("source file %q is not a source (*_test.sql files are tests)", f)
+		}
+		info, err := os.Stat(f)
+		if err != nil {
+			return nil, fmt.Errorf("failed to stat source file %q: %w", f, err)
+		}
+		rel, err := filepath.Rel(absRoot, f)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get relative path: %w", err)
+		}
+		sources = append(sources, discovery.DiscoveredFile{
+			Path:         f,
+			RelativePath: filepath.ToSlash(rel),
+			Type:         discovery.FileTypeSource,
+			ModTime:      info.ModTime(),
+		})
+	}
+	return sources, nil
 }
 
 // generateCoverageChannel returns a per-run unique NOTIFY channel name.  The
@@ -104,8 +151,14 @@ func Run(ctx context.Context, config *Config, searchPath string) (int, error) {
 		fmt.Printf("Found %d test file(s)\n", len(testFiles))
 	}
 
-	// Step 2: Discover source files (co-located with tests)
-	sourceFiles, err := discovery.DiscoverCoLocatedSources(searchPath, testFiles)
+	// Step 2: Discover source files (co-located with tests) unless the caller
+	// listed them explicitly.
+	var sourceFiles []discovery.DiscoveredFile
+	if len(config.SourceFiles) > 0 {
+		sourceFiles, err = explicitSources(searchPath, config.SourceFiles)
+	} else {
+		sourceFiles, err = discovery.DiscoverCoLocatedSources(searchPath, testFiles)
+	}
 	if err != nil {
 		return 1, fmt.Errorf("failed to discover source files: %w", err)
 	}
@@ -143,6 +196,9 @@ func Run(ctx context.Context, config *Config, searchPath string) (int, error) {
 
 	// Step 6: Execute tests (parallel or sequential based on config)
 	executor := runner.NewExecutor(pool, config.Timeout, config.SignalTimeout, config.Verbose, config.CoverageChannel)
+	if len(config.SourceFiles) > 0 {
+		executor.UseExplicitSources()
+	}
 
 	// Load any prerequisite setup scripts (globs expanded, order preserved) so
 	// they run in each test's temp database before the instrumented sources.

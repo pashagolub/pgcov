@@ -47,6 +47,10 @@ func main() {
 						Name:  cli.FlagSetup,
 						Usage: "SQL file(s) (globs allowed) run verbatim in each test's temp database before loading instrumented sources. Use for prerequisite schema the sources depend on. Repeatable; order preserved.",
 					},
+					&urfavecli.StringSliceFlag{
+						Name:  cli.FlagSource,
+						Usage: "Source file(s) (globs allowed) to instrument and load, in this order, for every test instead of the sources co-located with each test. Repeatable; order preserved.",
+					},
 					&urfavecli.BoolFlag{
 						Name:  cli.FlagVerbose,
 						Usage: "Enable debug output",
@@ -140,6 +144,7 @@ func runCommand(ctx context.Context, cmd *urfavecli.Command) error {
 		Parallel:      cmd.Int(cli.FlagParallel),
 		CoverageFile:  cmd.String(cli.FlagCoverageFile),
 		SetupFiles:    cmd.StringSlice(cli.FlagSetup),
+		SourceFiles:   cmd.StringSlice(cli.FlagSource),
 		Verbose:       cmd.Bool(cli.FlagVerbose),
 		FailUnder:     cmd.Float64(cli.FlagFailUnder),
 	})

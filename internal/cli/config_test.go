@@ -57,6 +57,7 @@ func TestApplyFlagsToConfig_SetFlagsApply(t *testing.T) {
 		FlagParallel:      true,
 		FlagCoverageFile:  true,
 		FlagSetup:         true,
+		FlagSource:        true,
 		FlagVerbose:       true,
 		FlagFailUnder:     true,
 	}, RunFlags{
@@ -66,6 +67,7 @@ func TestApplyFlagsToConfig_SetFlagsApply(t *testing.T) {
 		Parallel:      8,
 		CoverageFile:  "out.json",
 		SetupFiles:    []string{"a.sql", "glob/*.sql"},
+		SourceFiles:   []string{"01.sql", "02.sql"},
 		Verbose:       true,
 		FailUnder:     80,
 	})
@@ -87,6 +89,9 @@ func TestApplyFlagsToConfig_SetFlagsApply(t *testing.T) {
 	}
 	if len(cfg.SetupFiles) != 2 {
 		t.Errorf("setup files = %v", cfg.SetupFiles)
+	}
+	if len(cfg.SourceFiles) != 2 {
+		t.Errorf("source files = %v", cfg.SourceFiles)
 	}
 	if !cfg.Verbose {
 		t.Error("verbose not applied")

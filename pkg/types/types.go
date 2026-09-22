@@ -24,6 +24,11 @@ type Config struct {
 	// schemas). Order is preserved.
 	SetupFiles []string
 
+	// SourceFiles, when set, replace co-located source discovery: only these
+	// files (globs allowed) are instrumented and loaded, in the order given,
+	// for every test.
+	SourceFiles []string
+
 	// Output
 	CoverageFile string // Coverage data output path
 	Verbose      bool   // Enable debug logging

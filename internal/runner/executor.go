@@ -25,6 +25,8 @@ type Executor struct {
 	// each temp database before the instrumented sources are loaded. They are
 	// NOT instrumented and do NOT contribute to coverage.
 	setupSQL []SetupScript
+
+	explicitSources bool // sources were listed by the caller; skip the co-location filter
 }
 
 // SetupScript is a named chunk of prerequisite SQL run before sources load.
@@ -63,6 +65,12 @@ func (e *Executor) SetSetupScripts(scripts []SetupScript) {
 	e.setupSQL = scripts
 }
 
+// UseExplicitSources makes Execute load every source it is given, in order,
+// instead of only those co-located with the test.
+func (e *Executor) UseExplicitSources() {
+	e.explicitSources = true
+}
+
 // Execute runs a single test file and collects coverage.
 //
 // It never fails at the Go level: every problem encountered while running the
@@ -84,7 +92,9 @@ func (e *Executor) Execute(ctx context.Context, testFile *discovery.DiscoveredFi
 	}
 
 	// Narrow the sources to those co-located with this test.
-	sourceFiles = filterSourcesByDirectory(sourceFiles, filepath.Dir(testFile.Path))
+	if !e.explicitSources {
+		sourceFiles = filterSourcesByDirectory(sourceFiles, filepath.Dir(testFile.Path))
+	}
 
 	// Create context with timeout
 	testCtx, cancel := context.WithTimeout(ctx, e.timeout)

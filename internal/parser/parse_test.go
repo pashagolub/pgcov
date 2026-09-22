@@ -292,3 +292,27 @@ func TestParse_FileNotFound(t *testing.T) {
 		t.Errorf("Parse() expected nil result, got %v", parsed)
 	}
 }
+
+func TestExtractLanguage_Quoted(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+		want string
+	}{
+		{"bare", "CREATE FUNCTION f() RETURNS int AS $$ SELECT 1 $$ LANGUAGE plpgsql", "plpgsql"},
+		{"single-quoted", "CREATE FUNCTION f() RETURNS int AS $$ SELECT 1 $$ LANGUAGE 'plpgsql' IMMUTABLE", "plpgsql"},
+		{"double-quoted upper", `CREATE FUNCTION f() RETURNS int AS $$ SELECT 1 $$ LANGUAGE "SQL"`, "sql"},
+		{"do block quoted", "DO LANGUAGE 'plpgsql' $$ BEGIN END $$", "plpgsql"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stmts := ParseStatements(tt.sql)
+			if len(stmts) != 1 {
+				t.Fatalf("got %d statements, want 1", len(stmts))
+			}
+			if stmts[0].Language != tt.want {
+				t.Errorf("Language = %q, want %q", stmts[0].Language, tt.want)
+			}
+		})
+	}
+}
