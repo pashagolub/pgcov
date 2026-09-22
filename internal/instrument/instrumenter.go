@@ -108,8 +108,9 @@ func instrumentStatement(stmt *parser.Statement, filePath string, channel string
 // as its own `SELECT pg_notify(<channel>, ...);` statement placed immediately
 // before the statement it marks, which fires reliably while leaving the body's
 // last statement - and therefore the function's return type - untouched.
-// When useSQLStatement is false, signals use PERFORM pg_notify(<channel>, ...)
-// (PL/pgSQL).
+// When useSQLStatement is false (PL/pgSQL), signals are emitted through
+// EXECUTE rather than PERFORM: PERFORM overwrites FOUND, so a signal injected
+// between `PERFORM ... ;` and `IF FOUND` changed the function's behaviour.
 // The channel argument must be an identifier-safe string (lowercase letters,
 // digits, underscore) — the caller is responsible for this contract.
 func instrumentBody(stmt *parser.Statement, filePath string, skipToBegin bool, useSQLStatement bool, channel string) (string, []CoveragePoint) {
@@ -210,8 +211,7 @@ func instrumentBody(stmt *parser.Statement, filePath string, skipToBegin bool, u
 			// when termPos > 0 it is nested inside a control structure
 			// (e.g. IF … THEN RETURN …).
 			termIndent := indentOf(segText[termPos:])
-			notifyCall := fmt.Sprintf("%sPERFORM pg_notify('%s', '%s');",
-				termIndent, channel, escapedSignal)
+			notifyCall := termIndent + plpgsqlSignal(channel, cp.SignalID)
 			instrumentedBody.WriteString(segText[:termPos])
 			fmt.Fprintf(&instrumentedBody, "%s\n", notifyCall)
 			instrumentedBody.WriteString(segText[termPos:])
@@ -228,8 +228,7 @@ func instrumentBody(stmt *parser.Statement, filePath string, skipToBegin bool, u
 			} else {
 				lastWrittenPos = segEnd
 			}
-			notifyCall := fmt.Sprintf("%sPERFORM pg_notify('%s', '%s');",
-				indent, channel, escapedSignal)
+			notifyCall := indent + plpgsqlSignal(channel, cp.SignalID)
 			fmt.Fprintf(&instrumentedBody, "\n%s", notifyCall)
 		}
 	}
@@ -408,4 +407,11 @@ func markStatementLinesAsCovered(stmt *parser.Statement, filePath string) []Cove
 	locations := []CoveragePoint{cp}
 
 	return locations
+}
+
+// plpgsqlSignal returns the PL/pgSQL statement that fires one coverage signal.
+// EXECUTE is used because, unlike PERFORM, it leaves FOUND untouched.
+func plpgsqlSignal(channel, signalID string) string {
+	inner := fmt.Sprintf("SELECT pg_notify('%s', '%s')", channel, strings.ReplaceAll(signalID, "'", "''"))
+	return "EXECUTE '" + strings.ReplaceAll(inner, "'", "''") + "';"
 }

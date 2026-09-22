@@ -1075,3 +1075,47 @@ func TestExplicitSourceOrder(t *testing.T) {
 		}
 	})
 }
+
+// TestInstrumentationKeepsFound runs testdata/found, whose function reads
+// FOUND right after a PERFORM. The test SQL fails if the injected signal
+// overwrote it.
+func TestInstrumentationKeepsFound(t *testing.T) {
+	ctx := context.Background()
+
+	pgContainer, err := postgres.Run(ctx,
+		"docker.io/postgres:16-alpine",
+		postgres.WithDatabase("testdb"),
+		postgres.WithUsername("testuser"),
+		postgres.WithPassword("testpass"),
+		testcontainers.WithWaitStrategy(
+			wait.ForLog("database system is ready to accept connections").
+				WithOccurrence(2).
+				WithStartupTimeout(60*time.Second)),
+	)
+	if err != nil {
+		t.Fatalf("Failed to start PostgreSQL container: %v", err)
+	}
+	defer func() {
+		if err := pgContainer.Terminate(ctx); err != nil {
+			t.Logf("Failed to terminate container: %v", err)
+		}
+	}()
+
+	host, _ := pgContainer.Host(ctx)
+	port, _ := pgContainer.MappedPort(ctx, "5432")
+	config := &types.Config{
+		ConnectionString: fmt.Sprintf("host=%s port=%s user=testuser password=testpass dbname=testdb sslmode=prefer",
+			host, port.Port()),
+		Timeout:      30 * time.Second,
+		Parallelism:  1,
+		CoverageFile: filepath.Join(t.TempDir(), "coverage.json"),
+	}
+
+	exitCode, err := cli.Run(ctx, config, "../testdata/found")
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if exitCode != 0 {
+		t.Fatalf("exit code = %d, want 0", exitCode)
+	}
+}

@@ -298,7 +298,7 @@ See [examples/ci-integration](./examples/ci-integration) for GitHub Actions and 
 - **CLI Layer**: `run` and `report` subcommands and flag wiring (`urfave/cli/v3`), `cmd/pgcov`
 - **Discovery Layer**: Recursive filesystem scan; files ending in `_test.sql` are tests, all other `.sql` files are sources, and each test is scoped to sources from its own directory
 - **Parser Layer**: Pure-Go SQL statement splitting and classification via `pashagolub/pglex`
-- **Instrumentation Layer**: Statements inside PL/pgSQL function bodies get a `PERFORM pg_notify('pgcov', '<relPath>:<startOffset>:<byteLength>')` coverage signal; statements in SQL-language functions are wrapped in a `WITH _pgcov_signal AS (SELECT pg_notify(...))` CTE; all other DDL/DML counts as implicitly covered
+- **Instrumentation Layer**: Statements inside PL/pgSQL function bodies get an `EXECUTE 'SELECT pg_notify(...)'` coverage signal (EXECUTE, not PERFORM, so `FOUND` is left untouched); statements in SQL-language functions are wrapped in a `WITH _pgcov_signal AS (SELECT pg_notify(...))` CTE; all other DDL/DML counts as implicitly covered
 - **Database Layer**: One temporary database per test (`pgcov_test_<yyyymmdd_hhmmss>_<random hex>`), created from the configured server and dropped after the run (`pgx/v5`)
 - **Runner Layer**: Sequential executor, or a worker pool when `--parallel` is greater than 1; a dedicated connection `LISTEN`s on the `pgcov` channel for coverage signals during each test
 - **Coverage Layer**: Signals are aggregated into per-file byte-range hit counts; every instrumented position is seeded with 0 hits so uncovered branches show up in reports

@@ -6,7 +6,7 @@ PostgreSQL test runner and coverage tool — pure Go (no CGO, no external CLI to
 
 1. `internal/discovery` — walk dirs, classify `.sql` files as `Source` or `Test` (`*_test.sql`)
 2. `internal/parser` — token-split SQL into `[]*Statement` using `pashagolub/pglex` (pure Go lexer, not pg_query_go)
-3. `internal/instrument` — per-statement: PL/pgSQL/SQL function bodies get `PERFORM pg_notify('coverage_signal', '<relPath>:<startByteOffset>:<byteLength>')` injected; all other DDL/DML is marked implicitly covered
+3. `internal/instrument` — per-statement: PL/pgSQL/SQL function bodies get `EXECUTE 'SELECT pg_notify(''<channel>'', ''<relPath>:<startByteOffset>:<byteLength>'')'` injected (EXECUTE keeps `FOUND` intact, PERFORM does not); all other DDL/DML is marked implicitly covered
 4. `internal/database` — create isolated temp DB (`pgcov_test_<yyyymmdd_hhmmss>_<4-byte hex>`), deploy instrumented sources, execute the test `.sql` file, then `DROP DATABASE ... WITH (FORCE)`
 5. `internal/database.Listener` — dedicated `pgx.Conn` running `LISTEN coverage_signal`; forwards signals to a buffered channel (size 1000)
 6. `internal/coverage.Collector` — thread-safe (`sync.Mutex`) aggregation of signals into `Coverage.Positions[file]["startPos:length"]`

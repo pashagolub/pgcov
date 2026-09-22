@@ -201,9 +201,9 @@ $$ LANGUAGE sql;`
 			"function's last statement and dictates the return type")
 	}
 
-	// Should NOT use PERFORM (that's for PL/pgSQL)
-	if strings.Contains(instrumented.InstrumentedText, "PERFORM pg_notify") {
-		t.Error("SQL function should not use PERFORM")
+	// Should NOT use the PL/pgSQL signal form
+	if strings.Contains(instrumented.InstrumentedText, "EXECUTE 'SELECT pg_notify") {
+		t.Error("SQL function should not use EXECUTE")
 	}
 
 	t.Logf("Instrumented SQL:\n%s", instrumented.InstrumentedText)
@@ -588,7 +588,7 @@ $$ LANGUAGE plpgsql;`
 		t.Fatalf("Instrument() error = %v", err)
 	}
 
-	want := fmt.Sprintf("PERFORM pg_notify('%s',", ch)
+	want := fmt.Sprintf("EXECUTE 'SELECT pg_notify(''%s'',", ch)
 	if !strings.Contains(instrumented.InstrumentedText, want) {
 		t.Errorf("expected instrumented SQL to use custom channel %q, got:\n%s", ch, instrumented.InstrumentedText)
 	}
