@@ -33,13 +33,14 @@ func (r *LCOVReporter) SetBaseDir(dir string) {
 
 // Format formats coverage data as LCOV and writes to the writer
 func (r *LCOVReporter) Format(cov *coverage.Coverage, writer io.Writer) error {
-	files := cov.GetFiles()
-
-	// Write LCOV format for each file
-	for _, file := range files {
-		// Executable and implicit positions are both emitted; the split only
-		// affects how the percentage is computed, not what is reported.
-		posHits := cov.AllPositions(file)
+	// Only executable positions are emitted. Implicit DDL/DML is covered the
+	// moment its file loads, so including it inflated the line percentage over
+	// what `pgcov run` reports. Files with no executable statements are skipped.
+	for _, file := range cov.GetFiles() {
+		posHits := cov.Positions[file]
+		if len(posHits) == 0 {
+			continue
+		}
 		if err := r.formatFileFromPositions(file, posHits, writer); err != nil {
 			return err
 		}
