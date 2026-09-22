@@ -430,3 +430,26 @@ func TestLCOVReporter_BaseDir(t *testing.T) {
 		t.Errorf("expected LH:2 (two lines hit); got: %s", out)
 	}
 }
+
+func TestLCOVReporter_SkipsImplicitPositions(t *testing.T) {
+	cov := &coverage.Coverage{
+		Positions: map[string]coverage.PositionHits{
+			"funcs.sql": {"10:5": 1, "20:5": 0},
+		},
+		ImplicitPositions: map[string]coverage.PositionHits{
+			"funcs.sql":  {"0:9": 1},
+			"tables.sql": {"0:30": 1, "31:30": 1},
+		},
+	}
+
+	out, err := NewLCOVReporter().FormatString(cov)
+	if err != nil {
+		t.Fatalf("FormatString failed: %v", err)
+	}
+	if strings.Contains(out, "SF:tables.sql") {
+		t.Error("file with only implicit positions must produce no record")
+	}
+	if !strings.Contains(out, "SF:funcs.sql\nDA:10,1\nDA:20,0\nLF:2\nLH:1\n") {
+		t.Errorf("implicit position leaked into executable-only record:\n%s", out)
+	}
+}

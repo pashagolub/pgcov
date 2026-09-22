@@ -297,6 +297,8 @@ passing on an empty measurement.
 
 LCOV trace file format (compatible with `genhtml` and `coverage.py`).
 
+Only executable positions (`positions`) are emitted; `implicit_positions` (DDL/DML, always covered once the file loads) are left out so the LCOV percentage matches the one `pgcov run` prints, and a file with no executable statements produces no record.
+
 The reporter reads each source file referenced in `positions` and converts the stored byte-offset positions into line numbers (a position is attributed to the line on which its `startByteOffset` falls; multiple positions on the same line accumulate their hit counts). If a source file cannot be read, positions are emitted directly with `DA:<startByteOffset>,<hitCount>` as a fallback.
 
 ### Example Output
